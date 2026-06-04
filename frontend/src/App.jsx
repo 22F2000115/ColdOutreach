@@ -280,6 +280,17 @@ function AppLayout({ children }) {
             </svg>
             SMTP Settings
           </Link>
+          <Link
+            to="/contact"
+            className={`sidebar-nav-link${isActive('/contact') ? ' active' : ''}`}
+            style={{ paddingLeft: '16px' }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '2px', flexShrink: 0 }}>
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+              <polyline points="22,6 12,13 2,6" />
+            </svg>
+            Contact Us
+          </Link>
           {user?.role === 'admin' && (
             <Link
               to="/admin"
@@ -374,6 +385,7 @@ import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 import CampaignDetail from './pages/CampaignDetail';
 import AdminDashboard from './pages/AdminDashboard';
+import Contact from './pages/Contact';
 
 export default function App() {
   return (
@@ -384,6 +396,7 @@ export default function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/"         element={<ProtectedRoute><AppLayout><Dashboard /></AppLayout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><AppLayout><Settings /></AppLayout></ProtectedRoute>} />
+          <Route path="/contact"  element={<ProtectedRoute><AppLayout><Contact /></AppLayout></ProtectedRoute>} />
           <Route path="/campaigns/:id" element={<ProtectedRoute><AppLayout><CampaignDetail /></AppLayout></ProtectedRoute>} />
           <Route path="/admin"    element={<AdminRoute><AppLayout><AdminDashboard /></AppLayout></AdminRoute>} />
           <Route path="*"         element={<Navigate to="/" replace />} />

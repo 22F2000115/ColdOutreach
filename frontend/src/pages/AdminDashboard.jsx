@@ -35,6 +35,15 @@ export default function AdminDashboard() {
   const [message, setMessage] = useState({ text: '', type: '' });
   const [savingSettings, setSavingSettings] = useState(false);
 
+  // Contact details state
+  const [contacts, setContacts] = useState([]);
+  const [contactType, setContactType] = useState('email');
+  const [contactValue, setContactValue] = useState('');
+  const [contactLabel, setContactLabel] = useState('');
+  const [editingContactId, setEditingContactId] = useState(null);
+  const [savingContact, setSavingContact] = useState(false);
+  const [confirmContactDeleteId, setConfirmContactDeleteId] = useState(null);
+
   // Settings form state
   const [trialMaxSmtp, setTrialMaxSmtp] = useState(1);
   const [trialMaxCampaigns, setTrialMaxCampaigns] = useState(3);
@@ -80,11 +89,77 @@ export default function AdminDashboard() {
     }
   };
 
+  const fetchContacts = async () => {
+    try {
+      const res = await api.get('/api/contact-details');
+      setContacts(res.data || []);
+    } catch (e) {
+      console.error(e);
+      setMessage({ text: 'Failed to fetch contact details', type: 'error' });
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     setMessage({ text: '', type: '' });
-    await Promise.all([fetchStats(), fetchUsers(), fetchCampaigns()]);
+    await Promise.all([fetchStats(), fetchUsers(), fetchCampaigns(), fetchContacts()]);
     setLoading(false);
+  };
+
+  const handleSaveContact = async (e) => {
+    e.preventDefault();
+    setSavingContact(true);
+    setMessage({ text: '', type: '' });
+    try {
+      const payload = {
+        type: contactType,
+        value: contactValue,
+        label: contactLabel.trim() || null
+      };
+
+      if (editingContactId) {
+        const res = await api.put(`/api/admin/contact-details/${editingContactId}`, payload);
+        setContacts(prev => prev.map(c => c.id === editingContactId ? res.data : c));
+        setMessage({ text: 'Contact detail updated successfully', type: 'success' });
+      } else {
+        const res = await api.post('/api/admin/contact-details', payload);
+        setContacts(prev => [...prev, res.data]);
+        setMessage({ text: 'Contact detail added successfully', type: 'success' });
+      }
+      resetContactForm();
+    } catch (err) {
+      const errDetail = err.response?.data?.detail || 'Failed to save contact';
+      setMessage({ text: typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail), type: 'error' });
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
+  const handleEditContact = (c) => {
+    setEditingContactId(c.id);
+    setContactType(c.type);
+    setContactValue(c.value);
+    setContactLabel(c.label || '');
+  };
+
+  const handleDeleteContact = async (id) => {
+    try {
+      await api.delete(`/api/admin/contact-details/${id}`);
+      setContacts(prev => prev.filter(c => c.id !== id));
+      setMessage({ text: 'Contact detail deleted successfully', type: 'success' });
+      setConfirmContactDeleteId(null);
+    } catch (err) {
+      const errDetail = err.response?.data?.detail || 'Failed to delete contact';
+      setMessage({ text: typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail), type: 'error' });
+      setConfirmContactDeleteId(null);
+    }
+  };
+
+  const resetContactForm = () => {
+    setEditingContactId(null);
+    setContactType('email');
+    setContactValue('');
+    setContactLabel('');
   };
 
   useEffect(() => {
@@ -219,6 +294,16 @@ export default function AdminDashboard() {
             label: 'App Limits',
             icon: (
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            )
+          },
+          {
+            id: 'contact',
+            label: 'Contact Details',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                <polyline points="22,6 12,13 2,6" />
+              </svg>
             )
           }
         ].map(tab => (
@@ -607,6 +692,169 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Tab: Contact Details */}
+      {activeTab === 'contact' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '24px', alignItems: 'start' }}>
+          
+          {/* Add / Edit Form */}
+          <div className="card" style={{ padding: '24px' }}>
+            <h2 className="section-title" style={{ marginBottom: '20px' }}>
+              {editingContactId ? 'Edit Contact Detail' : 'Add Contact Detail'}
+            </h2>
+
+            <form onSubmit={handleSaveContact}>
+              <div className="form-group">
+                <label className="form-label">Contact Type</label>
+                <select
+                  value={contactType}
+                  onChange={e => setContactType(e.target.value)}
+                  className="form-control"
+                  required
+                >
+                  <option value="email">Email Address</option>
+                  <option value="whatsapp">WhatsApp Number</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Value</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder={contactType === 'email' ? 'support@company.com' : 'e.g. +15550199'}
+                  value={contactValue}
+                  onChange={e => setContactValue(e.target.value)}
+                  required
+                />
+                <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)' }}>
+                  {contactType === 'email' ? 'Enter a valid email address.' : 'Enter a phone number with country code (e.g. +1...).'}
+                </span>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Label / Department (Optional)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. Billing, Tech Support"
+                  value={contactLabel}
+                  onChange={e => setContactLabel(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={savingContact}>
+                  {savingContact ? 'Saving…' : editingContactId ? 'Update Contact' : 'Add Contact'}
+                </button>
+                {editingContactId && (
+                  <button type="button" className="btn btn-secondary" onClick={resetContactForm}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          {/* List of Contacts */}
+          <div className="card" style={{ padding: '24px' }}>
+            <div className="flex-between" style={{ marginBottom: '20px' }}>
+              <h2 className="section-title">Active Contacts</h2>
+              <span className="badge badge-running" style={{ background: 'var(--surface-hover)', color: 'var(--primary)', borderColor: 'var(--border-subtle)' }}>
+                {contacts.length} items configured
+              </span>
+            </div>
+
+            {contacts.length === 0 ? (
+              <div className="empty-state" style={{ padding: '40px 16px' }}>
+                <div className="empty-state-icon" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', marginBottom: '12px' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                    <polyline points="22,6 12,13 2,6" />
+                  </svg>
+                </div>
+                <p style={{ fontSize: '0.88rem' }}>No contact details configured yet. Add one on the left.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {contacts.map((c) => {
+                  const isEmail = c.type === 'email';
+                  return (
+                    <div
+                      key={c.id}
+                      className="card"
+                      style={{
+                        padding: '16px 18px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        border: '1px solid var(--border)',
+                        borderLeft: editingContactId === c.id ? '4px solid var(--primary)' : '1px solid var(--border)',
+                        boxShadow: editingContactId === c.id ? 'var(--shadow-md)' : 'var(--shadow-sm)',
+                        transform: editingContactId === c.id ? 'translateY(-1px)' : 'none',
+                        transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.2s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {/* Type Icon Circle */}
+                        <div style={{
+                          width: '40px', height: '40px', borderRadius: '10px',
+                          background: isEmail ? 'rgba(59, 130, 246, 0.08)' : 'rgba(34, 197, 94, 0.08)',
+                          color: isEmail ? '#3b82f6' : '#22c55e',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          flexShrink: 0, padding: '10px'
+                        }}>
+                          {isEmail ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                              <polyline points="22,6 12,13 2,6" />
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                            </svg>
+                          )}
+                        </div>
+                        <div>
+                          <strong style={{ display: 'block', fontSize: '0.92rem', fontFamily: 'var(--font-header)', fontWeight: 700 }}>
+                            {c.value}
+                          </strong>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
+                            {c.label || 'No Label'} &bull; <span style={{ textTransform: 'capitalize' }}>{c.type}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '0.78rem', gap: '4px' }} onClick={() => handleEditContact(c)}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                          </svg>
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '6px 8px', fontSize: '0.78rem', color: 'var(--error)', borderColor: 'rgba(220,38,38,0.15)', background: 'transparent' }}
+                          onClick={() => setConfirmContactDeleteId(c.id)}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--error-glow)'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Confirmation Backdrop Modal */}
       {confirmDeleteId && targetDeleteUser && (
         <div className="modal-backdrop">
@@ -641,6 +889,47 @@ export default function AdminDashboard() {
                   Cancel
                 </button>
                 <button className="btn btn-danger" onClick={() => handleDeleteUser(confirmDeleteId)}>
+                  Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Contact Delete Modal */}
+      {confirmContactDeleteId && (
+        <div className="modal-backdrop">
+          <div className="modal-box" style={{ maxWidth: '440px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Delete Contact Info</h3>
+              <button className="modal-close" onClick={() => setConfirmContactDeleteId(null)}>&times;</button>
+            </div>
+            <div className="modal-body" style={{ textAlign: 'center', padding: '30px 24px' }}>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: 'rgba(220, 38, 38, 0.08)',
+                color: 'var(--error)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '18px'
+              }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              </div>
+              <p style={{ marginBottom: '14px', fontSize: '1rem', fontWeight: 700, color: 'var(--foreground)' }}>
+                Delete this contact detail?
+              </p>
+              <p style={{ marginBottom: '24px', fontSize: '0.85rem', color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
+                This contact item will be permanently removed and will no longer be displayed to users on the Contact page.
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button className="btn btn-secondary" onClick={() => setConfirmContactDeleteId(null)}>
+                  Cancel
+                </button>
+                <button className="btn btn-danger" onClick={() => handleDeleteContact(confirmContactDeleteId)}>
                   Confirm Delete
                 </button>
               </div>

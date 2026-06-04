@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import engine, Base, get_db, SessionLocal
-from models import User, SMTPSettings, Campaign, Recipient
+from models import User, SMTPSettings, Campaign, Recipient, ContactDetail
 from auth import get_password_hash, verify_password, create_access_token, create_refresh_token, get_current_user, get_current_admin_user, JWT_SECRET_KEY, ALGORITHM
 from security import encrypt_password
 from worker import send_campaign_emails, get_smtp_connection, UPLOADS_DIR
@@ -69,6 +69,25 @@ def seed_admin():
         db.close()
 
 seed_admin()
+
+def seed_contact_details():
+    db = SessionLocal()
+    try:
+        count = db.query(ContactDetail).count()
+        if count == 0:
+            default_contacts = [
+                ContactDetail(type="email", value="support@coldoutreach.com", label="Customer Support"),
+                ContactDetail(type="email", value="sales@coldoutreach.com", label="Enterprise Sales"),
+                ContactDetail(type="whatsapp", value="+15550199", label="WhatsApp Support (US)"),
+            ]
+            db.bulk_save_objects(default_contacts)
+            db.commit()
+    except Exception as e:
+        print(f"Error seeding contact details: {e}")
+    finally:
+        db.close()
+
+seed_contact_details()
 
 app = FastAPI(title="Email Outreach Micro SaaS", version="1.0.0")
 
@@ -261,12 +280,12 @@ def get_smtp(current_user: User = Depends(get_current_user), db: Session = Depen
 @app.post("/api/settings/smtp")
 def save_smtp(
     sender_id: Optional[int] = Form(None),
-    host: str = Form(...),
-    port: int = Form(...),
-    username: str = Form(...),
+    host: Optional[str] = Form(None),
+    port: Optional[int] = Form(None),
+    username: Optional[str] = Form(None),
     password: Optional[str] = Form(None),
     from_name: str = Form(...),
-    from_email: str = Form(...),
+    from_email: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -277,13 +296,19 @@ def save_smtp(
         ).first()
         if not settings:
             raise HTTPException(status_code=404, detail="Sender account not found")
-        settings.host = host
-        settings.port = port
-        settings.username = username
+        if host is not None:
+            settings.host = host
+        if port is not None:
+            settings.port = port
+        if username is not None:
+            settings.username = username
         if password and password != "••••••••••••••••":
             settings.encrypted_password = encrypt_password(password)
         settings.from_name = from_name
-        settings.from_email = from_email
+        if from_email is not None:
+            settings.from_email = from_email
+        elif username is not None:
+            settings.from_email = username
     else:
         # Enforce limits using PLAN_LIMITS configuration
         user_plan = current_user.plan or "trial"
@@ -294,6 +319,8 @@ def save_smtp(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"SMTP account limit reached ({max_accounts} account(s) allowed for {user_plan} plan)."
             )
+        if not host or not port or not username:
+            raise HTTPException(status_code=400, detail="Host, port, and username are required for new SMTP configuration")
         if not password or password == "••••••••••••••••":
             raise HTTPException(status_code=400, detail="Password is required for new SMTP configuration")
         encrypted_pw = encrypt_password(password)
@@ -304,7 +331,7 @@ def save_smtp(
             username=username,
             encrypted_password=encrypted_pw,
             from_name=from_name,
-            from_email=from_email
+            from_email=from_email or username
         )
         db.add(settings)
         
@@ -1202,3 +1229,117 @@ def update_admin_settings(update_data: AdminSettingsUpdate, current_user: User =
             if k in PLAN_LIMITS["pro"] and isinstance(v, int):
                 PLAN_LIMITS["pro"][k] = v
     return PLAN_LIMITS
+
+
+# ── Contact Us Endpoints ───────────────────────────────────────────────────────
+
+class ContactDetailCreate(BaseModel):
+    type: str  # "email" or "whatsapp"
+    value: str
+    label: Optional[str] = None
+
+class ContactDetailUpdate(BaseModel):
+    type: Optional[str] = None
+    value: Optional[str] = None
+    label: Optional[str] = None
+
+@app.get("/api/contact-details")
+def get_contact_details(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    details = db.query(ContactDetail).all()
+    return [{
+        "id": d.id,
+        "type": d.type,
+        "value": d.value,
+        "label": d.label
+    } for d in details]
+
+@app.post("/api/admin/contact-details")
+def create_contact_detail(
+    data: ContactDetailCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    if data.type not in ["email", "whatsapp"]:
+        raise HTTPException(status_code=400, detail="Invalid contact type. Must be 'email' or 'whatsapp'.")
+    
+    val = data.value.strip()
+    if not val:
+        raise HTTPException(status_code=400, detail="Value cannot be empty.")
+        
+    if data.type == "email":
+        if "@" not in val:
+            raise HTTPException(status_code=400, detail="Invalid email address format.")
+    else:
+        digits_only = "".join([c for c in val if c.isdigit()])
+        if len(digits_only) < 7:
+            raise HTTPException(status_code=400, detail="Invalid WhatsApp number format.")
+
+    new_detail = ContactDetail(
+        type=data.type,
+        value=val,
+        label=data.label.strip() if data.label else None
+    )
+    db.add(new_detail)
+    db.commit()
+    db.refresh(new_detail)
+    return {
+        "id": new_detail.id,
+        "type": new_detail.type,
+        "value": new_detail.value,
+        "label": new_detail.label
+    }
+
+@app.put("/api/admin/contact-details/{id}")
+def update_contact_detail(
+    id: int,
+    data: ContactDetailUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    detail = db.query(ContactDetail).filter(ContactDetail.id == id).first()
+    if not detail:
+        raise HTTPException(status_code=404, detail="Contact detail not found.")
+        
+    if data.type is not None:
+        if data.type not in ["email", "whatsapp"]:
+            raise HTTPException(status_code=400, detail="Invalid contact type. Must be 'email' or 'whatsapp'.")
+        detail.type = data.type
+        
+    if data.value is not None:
+        val = data.value.strip()
+        if not val:
+            raise HTTPException(status_code=400, detail="Value cannot be empty.")
+        if detail.type == "email" and "@" not in val:
+            raise HTTPException(status_code=400, detail="Invalid email address format.")
+        elif detail.type == "whatsapp":
+            digits_only = "".join([c for c in val if c.isdigit()])
+            if len(digits_only) < 7:
+                raise HTTPException(status_code=400, detail="Invalid WhatsApp number format.")
+        detail.value = val
+        
+    if data.label is not None:
+        detail.label = data.label.strip() if data.label else None
+        
+    db.commit()
+    db.refresh(detail)
+    return {
+        "id": detail.id,
+        "type": detail.type,
+        "value": detail.value,
+        "label": detail.label
+    }
+
+@app.delete("/api/admin/contact-details/{id}")
+def delete_contact_detail(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user)
+):
+    detail = db.query(ContactDetail).filter(ContactDetail.id == id).first()
+    if not detail:
+        raise HTTPException(status_code=404, detail="Contact detail not found.")
+        
+    db.delete(detail)
+    db.commit()
+    return {"message": "Contact detail deleted successfully"}
+

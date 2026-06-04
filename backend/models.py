@@ -75,3 +75,12 @@ class Recipient(Base):
 
     # Relationships
     campaign = relationship("Campaign", back_populates="recipients")
+
+
+class ContactDetail(Base):
+    __tablename__ = "contact_details"
+
+    id = Column(Integer, primary_key=True, index=True)
+    type = Column(String, nullable=False)  # "email" or "whatsapp"
+    value = Column(String, nullable=False)
+    label = Column(String, nullable=True)  # Optional label like "Support", "Sales", "Inquiries"

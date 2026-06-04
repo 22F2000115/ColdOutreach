@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { api, useAuth } from '../App';
 import { PLAN_LIMITS } from '../config';
 
@@ -52,32 +53,40 @@ export default function Settings() {
       setSaving(false);
       return;
     }
-    if (!username.trim()) {
-      setMessage({ text: 'Gmail Address is required', type: 'error' });
-      setSaving(false);
-      return;
-    }
-    if (!password.trim()) {
-      setMessage({ text: 'Password is required', type: 'error' });
-      setSaving(false);
-      return;
-    }
-    const parsedPort = parseInt(port);
-    if (isNaN(parsedPort) || parsedPort <= 0) {
-      setMessage({ text: 'A valid port number is required', type: 'error' });
-      setSaving(false);
-      return;
+
+    if (!editingId) {
+      if (!username.trim()) {
+        setMessage({ text: 'Gmail Address is required', type: 'error' });
+        setSaving(false);
+        return;
+      }
+      if (!password.trim()) {
+        setMessage({ text: 'Password is required', type: 'error' });
+        setSaving(false);
+        return;
+      }
+      const parsedPort = parseInt(port);
+      if (isNaN(parsedPort) || parsedPort <= 0) {
+        setMessage({ text: 'A valid port number is required', type: 'error' });
+        setSaving(false);
+        return;
+      }
     }
 
     try {
       const fd = new FormData();
-      if (editingId) fd.append('sender_id', editingId);
-      fd.append('host', host);
-      fd.append('port', parsedPort);
-      fd.append('username', username);
-      fd.append('password', password);
-      fd.append('from_name', fromName);
-      fd.append('from_email', username);
+      if (editingId) {
+        fd.append('sender_id', editingId);
+        fd.append('from_name', fromName);
+      } else {
+        const parsedPort = parseInt(port);
+        fd.append('host', host);
+        fd.append('port', parsedPort);
+        fd.append('username', username);
+        fd.append('password', password);
+        fd.append('from_name', fromName);
+        fd.append('from_email', username);
+      }
       const res = await api.post('/api/settings/smtp', fd);
       setMessage({ text: res.data.message, type: 'success' });
       resetForm();
@@ -223,15 +232,27 @@ export default function Settings() {
 
             <div className="form-group">
               <label className="form-label">Gmail Address</label>
-              <input type="email" className="form-control" placeholder="you@gmail.com" value={username} onChange={e => setUsername(e.target.value)} required autoComplete="off" />
+              <input type="email" className="form-control" placeholder="you@gmail.com" value={username} onChange={e => setUsername(e.target.value)} required={!editingId} disabled={!!editingId} style={{ cursor: editingId ? 'not-allowed' : 'text', opacity: editingId ? 0.75 : 1 }} autoComplete="off" />
             </div>
 
             <div className="form-group">
               <label className="form-label">Gmail App Password</label>
-              <input type="password" className="form-control" placeholder="16-character app password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="new-password" />
+              <input type="password" className="form-control" placeholder="16-character app password" value={password} onChange={e => setPassword(e.target.value)} required={!editingId} disabled={!!editingId} style={{ cursor: editingId ? 'not-allowed' : 'text', opacity: editingId ? 0.75 : 1 }} autoComplete="new-password" />
               <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)' }}>
                 Use an App Password — not your account password. <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700 }}>Generate one here →</a>
               </span>
+              {editingId && (
+                <div style={{ marginTop: '12px', padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius)', fontSize: '0.78rem', color: 'var(--muted-foreground)', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--primary)', flexShrink: 0, marginTop: '2px' }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                  <span>
+                    To change the Gmail Address or App Password, please{' '}
+                    <Link to="/contact" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }}>
+                      Contact Us
+                    </Link>{' '}
+                    to request the change.
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Advanced */}
@@ -242,11 +263,11 @@ export default function Settings() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: '12px', marginTop: '12px' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">SMTP Host</label>
-                  <input type="text" className="form-control" value={host} onChange={e => setHost(e.target.value)} required />
+                  <input type="text" className="form-control" value={host} onChange={e => setHost(e.target.value)} required={!editingId} disabled={!!editingId} style={{ cursor: editingId ? 'not-allowed' : 'text', opacity: editingId ? 0.75 : 1 }} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">Port</label>
-                  <input type="number" className="form-control" value={port} onChange={e => setPort(parseInt(e.target.value))} required />
+                  <input type="number" className="form-control" value={port} onChange={e => setPort(parseInt(e.target.value))} required={!editingId} disabled={!!editingId} style={{ cursor: editingId ? 'not-allowed' : 'text', opacity: editingId ? 0.75 : 1 }} />
                 </div>
               </div>
             </details>
