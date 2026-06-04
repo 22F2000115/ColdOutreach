@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { api } from '../App';
+import { useState, useEffect } from 'react';
+import { api, useAuth } from '../App';
+import { PLAN_LIMITS } from '../config';
 
 export default function Settings() {
+  const { user } = useAuth();
   const [senders,   setSenders]   = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [editingId, setEditingId] = useState(null);
@@ -14,6 +16,9 @@ export default function Settings() {
   const [testing,   setTesting]   = useState(false);
   const [message,   setMessage]   = useState({ text: '', type: '' });
   const [testResult, setTestResult] = useState(null);
+
+  const limit = PLAN_LIMITS[user?.plan || 'trial'].max_smtp_accounts;
+  const isAtLimit = senders.length >= limit && !editingId;
 
   const fetchSenders = async () => {
     try {
@@ -175,10 +180,30 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* Trial expiry banner */}
+      {user?.plan === 'trial' && user?.trial_expires_at && (
+        <div className="alert alert-info" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <span>You are on the <strong>Trial Plan</strong>. Your trial expires on <strong>{new Date(user.trial_expires_at).toLocaleDateString()}</strong>.</span>
+          </div>
+          <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.82rem', height: '30px' }} onClick={() => alert('Subscription/upgrade features coming soon!')}>Upgrade to Pro</button>
+        </div>
+      )}
+
       {/* Alert */}
       {message.text && (
         <div className={`alert alert-${message.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: '24px' }}>
-          {message.type === 'success' ? '✓' : '!'} {message.text}
+          {message.type === 'success' ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"></polyline></svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          )}
+          <span>{message.text}</span>
         </div>
       )}
 
@@ -226,8 +251,14 @@ export default function Settings() {
               </div>
             </details>
 
+            {isAtLimit && (
+              <div style={{ background: 'var(--primary-subtle, rgba(99,102,241,0.08))', border: '1px solid var(--primary-border, rgba(99,102,241,0.2))', borderRadius: '8px', padding: '10px 14px', fontSize: '0.8rem', color: 'var(--muted-foreground)', marginBottom: '16px' }}>
+                SMTP account limit reached ({limit} allowed on {user?.plan} plan). Please upgrade to add more.
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-              <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={saving || testing}>
+              <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={saving || testing || isAtLimit}>
                 {saving ? 'Saving…' : editingId ? 'Update Sender' : 'Add Sender'}
               </button>
               {editingId && (
@@ -246,9 +277,13 @@ export default function Settings() {
                   testResult.status === 'success' ? 'badge-success' :
                   testResult.status === 'error' ? 'badge-error' :
                   'badge-running'
-                }`} style={{ fontSize: '0.78rem', padding: '6px 12px' }}>
-                  {testResult.status === 'success' && '✓ '}
-                  {testResult.status === 'error' && '✕ '}
+                }`} style={{ fontSize: '0.78rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center' }}>
+                  {testResult.status === 'success' && (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px', flexShrink: 0 }}><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  )}
+                  {testResult.status === 'error' && (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px', flexShrink: 0 }}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  )}
                   {testResult.text}
                 </span>
               )}
@@ -261,13 +296,15 @@ export default function Settings() {
           <div className="flex-between" style={{ marginBottom: '20px' }}>
             <h2 className="section-title">Configured Senders</h2>
             <span className="badge badge-running" style={{ background: 'var(--surface-hover)', color: 'var(--primary)', borderColor: 'var(--border-subtle)' }}>
-              {senders.length} {senders.length === 1 ? 'account' : 'accounts'}
+              {senders.length} / {limit} accounts used
             </span>
           </div>
 
           {senders.length === 0 ? (
             <div className="empty-state" style={{ padding: '40px 16px' }}>
-              <div className="empty-state-icon" style={{ fontSize: '2rem', color: 'var(--muted-foreground)' }}>✉</div>
+              <div className="empty-state-icon" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', marginBottom: '12px' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+              </div>
               <p style={{ fontSize: '0.88rem' }}>No sender accounts yet. Add one on the left.</p>
             </div>
           ) : (

@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../App';
+import logoLight from '../assets/logo-light.png';
+import logoDark from '../assets/logo-dark.png';
 
 export default function Login() {
   const [email,    setEmail]    = useState('');
@@ -10,6 +12,9 @@ export default function Login() {
   const [loading,  setLoading]  = useState(false);
   const { login, theme, toggleTheme } = useAuth();
   const navigate  = useNavigate();
+  const location  = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const registered = searchParams.get('registered') === '1';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -57,9 +62,14 @@ export default function Login() {
         }} />
 
         {/* Brand Header */}
-        <div style={{ zIndex: 1 }}>
-          <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.6rem', fontWeight: 900, letterSpacing: '-0.02em' }}>
-            Cold<span style={{ color: 'var(--primary)' }}>Outreach</span>
+        <div style={{ zIndex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <img 
+            src={logoDark} 
+            alt="ColdOutreach Logo" 
+            style={{ height: '26px', width: 'auto', display: 'block', objectFit: 'contain' }} 
+          />
+          <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.4rem', fontWeight: 900, letterSpacing: '-0.02em', transform: 'translateY(2px)' }}>
+            <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'rgba(255,255,255,0.9)' }}>Outreach</span>
           </div>
         </div>
 
@@ -116,12 +126,17 @@ export default function Login() {
         </div>
 
         <div style={{ maxWidth: '400px', width: '100%', animation: 'scaleIn 0.3s var(--ease-spring)' }}>
-          {/* Brand header on Mobile only */}
-          <div className="mobile-only-header" style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{ fontFamily: 'var(--font-header)', fontSize: '2rem', fontWeight: 900, marginBottom: '6px' }}>
-              Cold<span style={{ color: 'var(--logo-red)' }}>Outreach</span>
+          {/* Logo header - always visible */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+            <img 
+              src={theme === 'dark' ? logoDark : logoLight} 
+              alt="ColdOutreach Logo" 
+              style={{ height: '64px', width: 'auto', display: 'block', objectFit: 'contain' }} 
+            />
+            <div style={{ fontFamily: 'var(--font-header)', fontSize: '2.2rem', fontWeight: 900, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'var(--logo-dark)' }}>Outreach</span>
             </div>
-            <p style={{ color: 'var(--muted-foreground)', fontSize: '0.88rem' }}>
+            <p style={{ color: 'var(--muted-foreground)', fontSize: '0.88rem', margin: 0 }}>
               Sign in to your email outreach workspace
             </p>
           </div>
@@ -131,6 +146,16 @@ export default function Login() {
             <h1 style={{ fontFamily: 'var(--font-header)', fontSize: '1.45rem', fontWeight: 800, marginBottom: '24px', textAlign: 'center' }}>
               Welcome back
             </h1>
+
+            {registered && (
+              <div className="alert alert-success" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                Account created! Please sign in.
+              </div>
+            )}
 
             {error && (
               <div className="alert alert-error">{error}</div>
@@ -180,13 +205,6 @@ export default function Login() {
           </div>
         </div>
       </div>
-
-      {/* CSS style block for mobile view headers */}
-      <style>{`
-        @media (min-width: 901px) {
-          .mobile-only-header { display: none !important; }
-        }
-      `}</style>
     </div>
   );
 }

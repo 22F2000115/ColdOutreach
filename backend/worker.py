@@ -2,7 +2,6 @@ import asyncio
 import datetime
 import logging
 import smtplib
-import time
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -39,15 +38,56 @@ def build_message(
     sender_name: str,
     sender_email: str,
     recipient_email: str,
-    company: str,
+    recipient,
     subject_template: str,
     body_template: str,
     attachment_path: Path | None = None,
     attachment_display_name: str | None = None
 ) -> MIMEMultipart:
     """Build MIME message with personalizations."""
-    subject = subject_template.format(company=company or "")
-    body = body_template.format(company=company or "")
+    import json
+    import re
+    
+    # Build replacement dictionary
+    replacements = {
+        "company": recipient.company or "",
+        "first_name": recipient.first_name or "",
+        "last_name": recipient.last_name or "",
+        "role": recipient.role or "",
+    }
+    
+    if recipient.extra_data:
+        try:
+            extra = json.loads(recipient.extra_data)
+            if isinstance(extra, dict):
+                for k, v in extra.items():
+                    replacements[k.strip().lower()] = str(v) if v is not None else ""
+        except Exception:
+            pass
+
+    # Helper function to substitute variables using case-insensitive lookup
+    def substitute(template: str) -> str:
+        if not template:
+            return ""
+        # Find all {{placeholder}} patterns
+        placeholders = re.findall(r'\{\{([^}]+)\}\}', template)
+        res = template
+        for placeholder in placeholders:
+            key = placeholder.strip().lower()
+            val = replacements.get(key, "")
+            res = res.replace("{{" + placeholder + "}}", val)
+            
+        # Fallback for old single bracket {placeholder} patterns
+        single_placeholders = re.findall(r'(?<!\{)\{([^{}]+)\}(?!\})', res)
+        for sp in single_placeholders:
+            key = sp.strip().lower()
+            val = replacements.get(key, "")
+            res = res.replace("{" + sp + "}", val)
+            
+        return res
+
+    subject = substitute(subject_template)
+    body = substitute(body_template)
 
     msg = MIMEMultipart()
     msg["From"] = f"{sender_name} <{sender_email}>"
@@ -149,7 +189,7 @@ async def send_campaign_emails(campaign_id: int):
                     sender_name=smtp_settings.from_name,
                     sender_email=smtp_settings.from_email,
                     recipient_email=recipient.email,
-                    company=recipient.company,
+                    recipient=recipient,
                     subject_template=campaign.subject_template,
                     body_template=campaign.body_template,
                     attachment_path=attachment_path,

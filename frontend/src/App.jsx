@@ -1,6 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import TrialExpiredModal from './components/TrialExpiredModal';
+import logoLight from './assets/logo-light.png';
+import logoDark from './assets/logo-dark.png';
 
 // Create API Client instance
 export const api = axios.create({ baseURL: '' });
@@ -11,18 +14,95 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+let setTrialExpiredGlobal = () => {};
+let logoutGlobal = () => {};
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+function subscribeTokenRefresh(cb) {
+  refreshSubscribers.push(cb);
+}
+
+function onRefreshed(token) {
+  refreshSubscribers.map(cb => cb(token));
+  refreshSubscribers = [];
+}
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    // Check for 402 Trial Expired
+    if (error.response?.status === 402) {
+      setTrialExpiredGlobal(true);
+      return Promise.reject(error);
+    }
+    
+    // Check for 401 Unauthorized
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      if (originalRequest.url === '/api/auth/refresh' || originalRequest.url === '/api/auth/login') {
+        return Promise.reject(error);
+      }
+      
+      originalRequest._retry = true;
+      
+      if (!isRefreshing) {
+        isRefreshing = true;
+        try {
+          const res = await axios.post('/api/auth/refresh');
+          const newToken = res.data.access_token;
+          localStorage.setItem('token', newToken);
+          isRefreshing = false;
+          onRefreshed(newToken);
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return api(originalRequest);
+        } catch (err) {
+          isRefreshing = false;
+          logoutGlobal();
+          return Promise.reject(err);
+        }
+      }
+      
+      return new Promise((resolve) => {
+        subscribeTokenRefresh((token) => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          resolve(api(originalRequest));
+        });
+      });
+    }
+    
+    return Promise.reject(error);
+  }
+);
+
 // Auth Context
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [trialExpired, setTrialExpired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('theme');
     if (saved) return saved;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
+
+  const logout = async () => {
+    try {
+      await api.post('/api/auth/logout');
+    } catch {}
+    localStorage.removeItem('token');
+    setUser(null);
+    setTrialExpired(false);
+  };
+
+  useEffect(() => {
+    setTrialExpiredGlobal = setTrialExpired;
+    logoutGlobal = logout;
+  }, []);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -31,9 +111,11 @@ function AuthProvider({ children }) {
         try {
           const res = await api.get('/api/auth/me');
           setUser(res.data);
-        } catch {
-          localStorage.removeItem('token');
-          setUser(null);
+        } catch (err) {
+          if (err.response?.status !== 402) {
+            localStorage.removeItem('token');
+            setUser(null);
+          }
         }
       }
       setLoading(false);
@@ -64,13 +146,13 @@ function AuthProvider({ children }) {
     localStorage.setItem('token', res.data.access_token);
     const userRes = await api.get('/api/auth/me');
     setUser(userRes.data);
+    setTrialExpired(false);
   };
-
-  const logout = () => { localStorage.removeItem('token'); setUser(null); };
 
   return (
     <AuthContext.Provider value={{ user, login, logout, loading, theme, toggleTheme }}>
       {children}
+      {trialExpired && <TrialExpiredModal onSignOut={logout} />}
     </AuthContext.Provider>
   );
 }
@@ -83,6 +165,18 @@ function ProtectedRoute({ children }) {
     </div>
   );
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function AdminRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted-foreground)', fontFamily: 'var(--font-body)' }}>
+      Loading…
+    </div>
+  );
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'admin') return <Navigate to="/" replace />;
   return children;
 }
 
@@ -100,33 +194,15 @@ function AppLayout({ children }) {
       {/* ── Sidebar ── */}
       <aside className="sidebar">
         {/* Brand */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: '4px', gap: '8px' }}>
-          <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.4rem', fontWeight: 900, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>
-            Cold<span style={{ color: 'var(--logo-red)' }}>Outreach</span>
+        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '4px', gap: '8px' }}>
+          <img 
+            src={theme === 'dark' ? logoDark : logoLight} 
+            alt="ColdOutreach Logo" 
+            style={{ height: '26px', width: 'auto', display: 'block', objectFit: 'contain' }} 
+          />
+          <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.25rem', fontWeight: 900, color: 'var(--foreground)', letterSpacing: '-0.02em', lineHeight: 1, transform: 'translateY(2px)' }}>
+            <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'var(--logo-dark)' }}>Outreach</span>
           </div>
-          <button
-            onClick={toggleTheme}
-            className="theme-toggle-btn"
-            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-          >
-            {theme === 'dark' ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5"></circle>
-                <line x1="12" y1="1" x2="12" y2="3"></line>
-                <line x1="12" y1="21" x2="12" y2="23"></line>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                <line x1="1" y1="12" x2="3" y2="12"></line>
-                <line x1="21" y1="12" x2="23" y2="12"></line>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-              </svg>
-            )}
-          </button>
         </div>
 
         {/* User Profile Card */}
@@ -163,8 +239,15 @@ function AppLayout({ children }) {
               <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {user.email ? user.email.split('@')[0] : 'User'}
               </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {user.email}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+                <span className={`plan-badge plan-badge--${
+                  user.role === 'admin' ? 'admin'
+                  : user.plan === 'pro' ? 'pro'
+                  : user.plan === 'trial' ? 'trial'
+                  : 'free'
+                }`}>
+                  {user.role === 'admin' ? 'Admin' : user.plan === 'pro' ? 'Pro' : user.plan === 'trial' ? 'Trial' : 'Free'}
+                </span>
               </div>
             </div>
           </div>
@@ -197,6 +280,19 @@ function AppLayout({ children }) {
             </svg>
             SMTP Settings
           </Link>
+          {user?.role === 'admin' && (
+            <Link
+              to="/admin"
+              className={`sidebar-nav-link${isActive('/admin') ? ' active' : ''}`}
+              style={{ paddingLeft: '16px' }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '2px', flexShrink: 0 }}>
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="9" y1="3" x2="9" y2="21"></line>
+              </svg>
+              Admin Panel
+            </Link>
+          )}
         </nav>
 
         {/* Sign out */}
@@ -240,7 +336,32 @@ function AppLayout({ children }) {
       </aside>
 
       {/* ── Main ── */}
-      <main className="main-content">
+      <main className="main-content" style={{ position: 'relative' }}>
+        <div className="floating-theme-toggle">
+          <button
+            onClick={toggleTheme}
+            className="theme-toggle-btn"
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {theme === 'dark' ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5"></circle>
+                <line x1="12" y1="1" x2="12" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="23"></line>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                <line x1="1" y1="12" x2="3" y2="12"></line>
+                <line x1="21" y1="12" x2="23" y2="12"></line>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+              </svg>
+            )}
+          </button>
+        </div>
         {children}
       </main>
     </div>
@@ -252,6 +373,7 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
 import CampaignDetail from './pages/CampaignDetail';
+import AdminDashboard from './pages/AdminDashboard';
 
 export default function App() {
   return (
@@ -263,6 +385,7 @@ export default function App() {
           <Route path="/"         element={<ProtectedRoute><AppLayout><Dashboard /></AppLayout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><AppLayout><Settings /></AppLayout></ProtectedRoute>} />
           <Route path="/campaigns/:id" element={<ProtectedRoute><AppLayout><CampaignDetail /></AppLayout></ProtectedRoute>} />
+          <Route path="/admin"    element={<AdminRoute><AppLayout><AdminDashboard /></AppLayout></AdminRoute>} />
           <Route path="*"         element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -10,6 +10,10 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    plan = Column(String, default="trial", nullable=False)
+    trial_expires_at = Column(DateTime, default=lambda: datetime.datetime.utcnow() + datetime.timedelta(days=30), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    role = Column(String, default="user", nullable=False)
 
     # Relationships
     smtp_accounts = relationship("SMTPSettings", back_populates="user", cascade="all, delete-orphan")
@@ -44,6 +48,7 @@ class Campaign(Base):
     sender_id = Column(Integer, ForeignKey("smtp_settings.id"), nullable=True)
     attachment_name = Column(String, nullable=True)  # filename of attachment
     attachment_display_name = Column(String, nullable=True)  # custom filename shown to recipient
+    scheduled_send_at = Column(DateTime, nullable=True)  # 10-minute delay send time
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Relationships
@@ -59,6 +64,10 @@ class Recipient(Base):
     campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
     email = Column(String, index=True, nullable=False)
     company = Column(String, nullable=True)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    role = Column(String, nullable=True)
+    extra_data = Column(Text, nullable=True)  # JSON-encoded extra fields
     status = Column(String, default="pending")  # pending, sending, sent, failed, skipped
     retry_count = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)

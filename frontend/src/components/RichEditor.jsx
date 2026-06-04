@@ -1,4 +1,25 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
+
+const TBtn = ({ label, cmd, val, title, disabled, onExec }) => (
+  <button
+    type="button"
+    title={title || label}
+    disabled={disabled}
+    onMouseDown={(e) => { e.preventDefault(); onExec(cmd, val); }}
+    style={{
+      background: 'none', border: 'none', color: 'var(--muted-foreground)',
+      cursor: disabled ? 'not-allowed' : 'pointer', padding: '3px 8px', borderRadius: '4px',
+      fontSize: '0.82rem', fontWeight: 700, lineHeight: 1.4,
+      transition: 'color 0.15s, background 0.15s', fontFamily: 'var(--font-body)'
+    }}
+    onMouseEnter={e => { if (!disabled) { e.currentTarget.style.background = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--foreground)'; } }}
+    onMouseLeave={e => { if (!disabled) { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--muted-foreground)'; } }}
+  >
+    {label}
+  </button>
+);
+
+const Sep = () => <span style={{ width: '1px', height: '16px', background: 'var(--border-mid)', margin: '0 3px', display: 'inline-block' }} />;
 
 export default function RichEditor({ value, onChange, disabled }) {
   const editorRef = useRef(null);
@@ -24,40 +45,19 @@ export default function RichEditor({ value, onChange, disabled }) {
     if (editorRef.current) onChange(editorRef.current.innerHTML);
   };
 
-  const TBtn = ({ label, cmd, val, title }) => (
-    <button
-      type="button"
-      title={title || label}
-      disabled={disabled}
-      onMouseDown={(e) => { e.preventDefault(); exec(cmd, val); }}
-      style={{
-        background: 'none', border: 'none', color: 'var(--muted-foreground)',
-        cursor: disabled ? 'not-allowed' : 'pointer', padding: '3px 8px', borderRadius: '4px',
-        fontSize: '0.82rem', fontWeight: 700, lineHeight: 1.4,
-        transition: 'color 0.15s, background 0.15s', fontFamily: 'var(--font-body)'
-      }}
-      onMouseEnter={e => { if (!disabled) { e.currentTarget.style.background = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--foreground)'; } }}
-      onMouseLeave={e => { if (!disabled) { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--muted-foreground)'; } }}
-    >
-      {label}
-    </button>
-  );
-
-  const Sep = () => <span style={{ width: '1px', height: '16px', background: 'var(--border-mid)', margin: '0 3px', display: 'inline-block' }} />;
-
   return (
     <div>
       {!disabled && (
         <div className="rich-editor-toolbar">
-          <TBtn label="B" cmd="bold" title="Bold" />
-          <TBtn label="I" cmd="italic" title="Italic" />
-          <TBtn label="U" cmd="underline" title="Underline" />
+          <TBtn label="B" cmd="bold" title="Bold" disabled={disabled} onExec={exec} />
+          <TBtn label="I" cmd="italic" title="Italic" disabled={disabled} onExec={exec} />
+          <TBtn label="U" cmd="underline" title="Underline" disabled={disabled} onExec={exec} />
           <Sep />
-          <TBtn label="H2" cmd="formatBlock" val="h2" title="Heading" />
-          <TBtn label="P"  cmd="formatBlock" val="p"  title="Paragraph" />
+          <TBtn label="H2" cmd="formatBlock" val="h2" title="Heading" disabled={disabled} onExec={exec} />
+          <TBtn label="P"  cmd="formatBlock" val="p"  title="Paragraph" disabled={disabled} onExec={exec} />
           <Sep />
-          <TBtn label="• List" cmd="insertUnorderedList" title="Bullet list" />
-          <TBtn label="1. List" cmd="insertOrderedList" title="Numbered list" />
+          <TBtn label="• List" cmd="insertUnorderedList" title="Bullet list" disabled={disabled} onExec={exec} />
+          <TBtn label="1. List" cmd="insertOrderedList" title="Numbered list" disabled={disabled} onExec={exec} />
           <Sep />
           <button
             type="button"
@@ -79,7 +79,7 @@ export default function RichEditor({ value, onChange, disabled }) {
           >
             Link
           </button>
-          <TBtn label="Clear" cmd="removeFormat" title="Clear formatting" />
+          <TBtn label="Clear" cmd="removeFormat" title="Clear formatting" disabled={disabled} onExec={exec} />
         </div>
       )}
       <div

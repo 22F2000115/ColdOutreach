@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
 import { useAuth } from '../App';
+import logoLight from '../assets/logo-light.png';
+import logoDark from '../assets/logo-dark.png';
 
 export default function Register() {
-  const { theme, toggleTheme } = useAuth();
+  const { theme, toggleTheme, login } = useAuth();
   const [email,           setEmail]           = useState('');
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -25,13 +26,20 @@ export default function Register() {
     }
     setLoading(true);
     try {
+      // 1. Register
       const fd = new FormData();
       fd.append('email', email);
       fd.append('password', password);
-      await axios.post('/api/auth/register', fd);
+      await import('axios').then(m => m.default.post('/api/auth/register', fd));
+
+      // 2. Auto-login immediately after registration
       setSuccess(true);
-      setTimeout(() => navigate('/login'), 2000);
+      await login(email, password);
+
+      // 3. Redirect to dashboard
+      navigate('/');
     } catch (err) {
+      setSuccess(false);
       setError(err.response?.data?.detail || 'Registration failed. Try a different email.');
       setAnimateShake(true);
       setTimeout(() => setAnimateShake(false), 400);
@@ -70,9 +78,14 @@ export default function Register() {
         }} />
 
         {/* Brand Header */}
-        <div style={{ zIndex: 1 }}>
-          <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.6rem', fontWeight: 900, letterSpacing: '-0.02em' }}>
-            Cold<span style={{ color: 'var(--primary)' }}>Outreach</span>
+        <div style={{ zIndex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <img 
+            src={logoDark} 
+            alt="ColdOutreach Logo" 
+            style={{ height: '26px', width: 'auto', display: 'block', objectFit: 'contain' }} 
+          />
+          <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.4rem', fontWeight: 900, letterSpacing: '-0.02em', transform: 'translateY(2px)' }}>
+            <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'rgba(255,255,255,0.9)' }}>Outreach</span>
           </div>
         </div>
 
@@ -130,11 +143,16 @@ export default function Register() {
 
         <div style={{ maxWidth: '400px', width: '100%', animation: 'scaleIn 0.3s var(--ease-spring)' }}>
           {/* Brand header on Mobile only */}
-          <div className="mobile-only-header" style={{ textAlign: 'center', marginBottom: '32px' }}>
-            <div style={{ fontFamily: 'var(--font-header)', fontSize: '2rem', fontWeight: 900, marginBottom: '6px' }}>
-              Cold<span style={{ color: 'var(--logo-red)' }}>Outreach</span>
+          <div className="mobile-only-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+            <img 
+              src={theme === 'dark' ? logoDark : logoLight} 
+              alt="ColdOutreach Logo" 
+              style={{ height: '64px', width: 'auto', display: 'block', objectFit: 'contain' }} 
+            />
+            <div style={{ fontFamily: 'var(--font-header)', fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'var(--logo-dark)' }}>Outreach</span>
             </div>
-            <p style={{ color: 'var(--muted-foreground)', fontSize: '0.88rem' }}>
+            <p style={{ color: 'var(--muted-foreground)', fontSize: '0.88rem', margin: 0 }}>
               Create an account to start your first campaign
             </p>
           </div>
@@ -146,7 +164,7 @@ export default function Register() {
             </h1>
 
             {error   && <div className="alert alert-error">{error}</div>}
-            {success && <div className="alert alert-success">Account created! Redirecting…</div>}
+            {success && <div className="alert alert-success">Account created! Signing you in…</div>}
 
             <form onSubmit={handleSubmit}>
               <div className="form-group" style={{ position: 'relative' }}>

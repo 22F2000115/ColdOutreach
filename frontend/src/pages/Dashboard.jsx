@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api } from '../App';
+import { api, useAuth } from '../App';
+import { PLAN_LIMITS } from '../config';
 import RichEditor from '../components/RichEditor';
 
 /* ── Status badge helper ──────────────────────────────────────────────────── */
@@ -11,10 +12,17 @@ function StatusBadge({ status }) {
     paused:    'badge-paused',
     draft:     'badge-draft',
     failed:    'badge-error',
+    scheduled: 'badge-paused',
   };
   return (
     <span className={`badge ${map[status] || 'badge-draft'}`}>
       {status === 'running' && <span className="sending-dot" />}
+      {status === 'scheduled' && (
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}>
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+      )}
       {status}
     </span>
   );
@@ -23,20 +31,35 @@ function StatusBadge({ status }) {
 /* ── Dashboard ────────────────────────────────────────────────────────────── */
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [senders,   setSenders]   = useState([]);
   const [loading,   setLoading]   = useState(true);
 
   const [showModal, setShowModal]   = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [name,      setName]        = useState('');
   const [subject,   setSubject]     = useState('');
-  const [body,      setBody]        = useState('<p>Hi,</p><p>I noticed what your company <strong>{company}</strong> is doing and wanted to reach out.</p>');
+  const [body,      setBody]        = useState('<p>Hi,</p><p>I noticed what your company <strong>{{company}}</strong> is doing and wanted to reach out.</p>');
   const [selectedSenderId, setSelectedSenderId] = useState('');
   const [csvFile,   setCsvFile]     = useState(null);
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [attachmentDisplayName, setAttachmentDisplayName] = useState('');
   const [creating,  setCreating]    = useState(false);
   const [error,     setError]       = useState('');
+
+  const userPlan = user?.plan || 'trial';
+  const campaignLimit = PLAN_LIMITS[userPlan].max_campaigns;
+  const isAtCampaignLimit = campaigns.length >= campaignLimit;
+
+  const handleOpenCreateModal = () => {
+    if (isAtCampaignLimit) {
+      alert(`Campaign limit reached (${campaignLimit} allowed on ${userPlan} plan). Please upgrade to add more.`);
+      return;
+    }
+    setShowModal(true);
+  };
+
 
   const fetchCampaigns = async () => {
     try {
@@ -133,7 +156,7 @@ export default function Dashboard() {
         </div>
         <button
           className="btn btn-primary"
-          onClick={() => setShowModal(true)}
+          onClick={handleOpenCreateModal}
           style={{ transition: 'all 0.3s' }}
           onMouseEnter={(e) => {
             const icon = e.currentTarget.querySelector('.plus-icon');
@@ -249,7 +272,7 @@ export default function Dashboard() {
               animation: 'pulsing 2s infinite alternate',
               boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
             }}
-            onClick={() => setShowModal(true)}
+            onClick={handleOpenCreateModal}
           >
             Create Campaign
           </button>
@@ -326,6 +349,7 @@ export default function Dashboard() {
                       Start
                     </button>
                   )}
+
                   {c.status === 'running' && (
                     <button
                       className="btn btn-secondary"
@@ -399,18 +423,33 @@ export default function Dashboard() {
 
                 <div className="form-group">
                   <label className="form-label">Subject Line</label>
-                  <input type="text" className="form-control" placeholder="e.g. Quick note about {company}" value={subject} onChange={e => setSubject(e.target.value)} required />
+                  <input type="text" className="form-control" placeholder="e.g. Quick note about {{company}}" value={subject} onChange={e => setSubject(e.target.value)} required />
                   <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)' }}>
-                    Use <code>{'{company}'}</code> as a placeholder — replaced per recipient.
+                    Use placeholders like <code>{"{{company}}"}</code>, <code>{"{{first_name}}"}</code>, <code>{"{{last_name}}"}</code>, <code>{"{{role}}"}</code> or custom CSV column headers.
                   </span>
                 </div>
 
                 <div className="form-group">
                   <label className="form-label">Email Body</label>
                   <RichEditor value={body} onChange={setBody} />
-                  <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>
-                    Use <code>{'{company}'}</code> anywhere in the body.
+                  <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', marginTop: '4px', display: 'block' }}>
+                    Use placeholders like <code>{"{{company}}"}</code>, <code>{"{{first_name}}"}</code>, etc. anywhere in the body.
                   </span>
+                </div>
+
+                <div className="form-group" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-8px', marginBottom: '16px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setShowPreviewModal(true)}
+                    style={{ fontSize: '0.82rem', padding: '6px 12px', height: '32px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                    Preview Email
+                  </button>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -447,6 +486,96 @@ export default function Dashboard() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Email Preview Modal ─────────────────────────────────────────── */}
+      {showPreviewModal && (
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setShowPreviewModal(false); }}>
+          <div className="modal-box" style={{ maxWidth: '600px', animation: 'scaleIn 0.3s var(--ease-spring)' }}>
+            <div className="modal-header">
+              <h2 className="modal-title">Email Template Preview</h2>
+              <button className="modal-close" onClick={() => setShowPreviewModal(false)}>×</button>
+            </div>
+            <div className="modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ background: 'var(--bg-secondary)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--muted-foreground)' }}>
+                  <strong>From:</strong> {(() => {
+                    const sender = senders.find(s => s.id == selectedSenderId);
+                    return sender ? `${sender.from_name} <${sender.from_email}>` : 'Selected Sender';
+                  })()}
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--muted-foreground)' }}>
+                  <strong>To:</strong> Lead Email &lt;lead@company.com&gt;
+                </div>
+                <div style={{ fontSize: '0.94rem', color: 'var(--foreground)', borderTop: '1px solid var(--border-subtle)', paddingTop: '8px', marginTop: '4px' }}>
+                  <strong>Subject:</strong> {(() => {
+                    const sample = { company: "Acme Corp", first_name: "Jane", last_name: "Doe", role: "VP of Growth" };
+                    let sub = subject;
+                    Object.keys(sample).forEach(k => {
+                      sub = sub.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'gi'), sample[k]);
+                      sub = sub.replace(new RegExp(`\\{${k}\\}`, 'gi'), sample[k]);
+                    });
+                    return sub || '(No Subject)';
+                  })()}
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label" style={{ marginBottom: '8px' }}>Rendered Body (Sandboxed Preview)</label>
+                <iframe
+                  srcDoc={`
+                    <html>
+                      <head>
+                        <style>
+                          body {
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                            font-size: 14px;
+                            line-height: 1.6;
+                            color: #334155;
+                            padding: 20px;
+                            margin: 0;
+                            background-color: #ffffff;
+                          }
+                          p { margin-top: 0; margin-bottom: 1em; }
+                          strong { color: #0f172a; }
+                        </style>
+                      </head>
+                      <body>
+                        ${(() => {
+                          const sample = { company: "Acme Corp", first_name: "Jane", last_name: "Doe", role: "VP of Growth" };
+                          let rendered = body;
+                          Object.keys(sample).forEach(k => {
+                            rendered = rendered.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'gi'), sample[k]);
+                            rendered = rendered.replace(new RegExp(`\\{${k}\\}`, 'gi'), sample[k]);
+                          });
+                          return rendered;
+                        })()}
+                      </body>
+                    </html>
+                  `}
+                  style={{
+                    width: '100%',
+                    height: '350px',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '8px',
+                    background: '#ffffff'
+                  }}
+                  title="email-preview"
+                />
+              </div>
+
+              <div style={{ background: 'var(--primary-subtle, rgba(99,102,241,0.08))', border: '1px solid var(--primary-border, rgba(99,102,241,0.2))', borderRadius: '8px', padding: '10px 14px', fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>
+                <strong>Note:</strong> Custom CSV column values are parsed and substituted at runtime. The preview uses sample values for representation.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowPreviewModal(false)}>
+                  Close Preview
+                </button>
+              </div>
             </div>
           </div>
         </div>

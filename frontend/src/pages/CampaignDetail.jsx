@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../App';
 import RichEditor from '../components/RichEditor';
+import FailedContactsTab from '../components/FailedContactsTab';
 
 function StatusBadge({ status }) {
   const map = {
@@ -30,6 +31,8 @@ export default function CampaignDetail() {
   const [loading,     setLoading]     = useState(true);
   const [actionLoad,  setActionLoad]  = useState(false);
   const [message,     setMessage]     = useState({ text: '', type: '' });
+  const [activeTab,   setActiveTab]   = useState('all');
+  const [syncing,     setSyncing]     = useState(false);
 
   // Template editing states
   const [campName,    setCampName]    = useState('');
@@ -95,7 +98,7 @@ export default function CampaignDetail() {
       ]);
       setCampaign(campRes.data);
       setRecipients(recRes.data);
-    } catch (err) {
+    } catch {
       setMessage({ text: 'Campaign not found or access denied.', type: 'error' });
     } finally {
       setLoading(false);
@@ -140,7 +143,7 @@ export default function CampaignDetail() {
     try {
       await api.delete(`/api/campaigns/${id}`);
       navigate('/');
-    } catch (err) {
+    } catch {
       setMessage({ text: 'Failed to delete campaign.', type: 'error' });
     }
   };
@@ -220,6 +223,26 @@ export default function CampaignDetail() {
     }
   };
 
+  const handleSyncBounces = async () => {
+    setMessage({ text: '', type: '' });
+    setSyncing(true);
+    try {
+      const res = await api.post(`/api/campaigns/${id}/sync-bounces`);
+      setMessage({ 
+        text: res.data.message || `Synchronized bounces successfully.`, 
+        type: 'success' 
+      });
+      fetchData();
+    } catch (err) {
+      setMessage({ 
+        text: err.response?.data?.detail || 'Failed to connect to mailbox and sync bounces.', 
+        type: 'error' 
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleDownloadCsv = async () => {
     setMessage({ text: '', type: '' });
     try {
@@ -231,7 +254,7 @@ export default function CampaignDetail() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (err) {
+    } catch {
       setMessage({ text: 'Failed to download recipients CSV', type: 'error' });
     }
   };
@@ -247,7 +270,7 @@ export default function CampaignDetail() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (err) {
+    } catch {
       setMessage({ text: 'Failed to download sample CSV template', type: 'error' });
     }
   };
@@ -313,7 +336,12 @@ export default function CampaignDetail() {
 
       {message.text && (
         <div className={`alert alert-${message.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: '24px' }}>
-          {message.type === 'success' ? '✓' : '!'} {message.text}
+          {message.type === 'success' ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"></polyline></svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          )}
+          <span>{message.text}</span>
         </div>
       )}
 
@@ -576,69 +604,113 @@ export default function CampaignDetail() {
 
       {/* Leads log card */}
       <div className="card" style={{ overflow: 'hidden', marginBottom: '32px' }}>
-        <div className="flex-between" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-subtle)' }}>
-          <h2 className="section-title">Outreach Log</h2>
+        <div className="tabs-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: '14px' }}>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button 
+              type="button"
+              className={`tab-btn${activeTab === 'all' ? ' active' : ''}`}
+              onClick={() => setActiveTab('all')}
+            >
+              All Contacts <span className="tab-badge">{recipients.length}</span>
+            </button>
+            <button 
+              type="button"
+              className={`tab-btn${activeTab === 'failed' ? ' active' : ''}`}
+              onClick={() => setActiveTab('failed')}
+            >
+              Failed <span className="tab-badge">{recipients.filter(r => r.status === 'failed').length}</span>
+            </button>
+          </div>
+
           <button 
+            type="button"
             className="btn btn-secondary" 
-            style={{ fontSize: '0.8rem', padding: '6px 12px' }}
-            onClick={handleDownloadCsv}
-            disabled={recipients.length === 0}
+            style={{ fontSize: '0.8rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: '4px 0' }}
+            onClick={handleSyncBounces}
+            disabled={syncing}
           >
-            Download CSV
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: syncing ? 'spin 1.5s linear infinite' : 'none' }}>
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+            </svg>
+            {syncing ? 'Syncing...' : 'Sync Bounces'}
           </button>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Recipient</th>
-                <th>Company</th>
-                <th>Status</th>
-                <th>Sent At</th>
-                <th>Details</th>
-                {isEditable && <th style={{ width: '60px', textAlign: 'center' }}>Action</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {recipients.length === 0 ? (
-                <tr>
-                  <td colSpan={isEditable ? 6 : 5} style={{ textAlign: 'center', padding: '40px', color: 'var(--muted-foreground)' }}>
-                    No recipients loaded.
-                  </td>
-                </tr>
-              ) : recipients.map((r) => (
-                <tr key={r.id} className={`outreach-log-row status-${r.status}`}>
-                  <td style={{ fontWeight: 600 }}>{r.email}</td>
-                  <td style={{ color: 'var(--muted-foreground)' }}>{r.company || '—'}</td>
-                  <td><StatusBadge status={r.status} /></td>
-                  <td style={{ color: 'var(--muted-foreground)', fontSize: '0.82rem' }}>
-                    {r.sent_at ? new Date(r.sent_at).toLocaleString() : '—'}
-                  </td>
-                  <td style={{ fontSize: '0.82rem', color: r.status === 'failed' ? 'var(--error)' : 'var(--muted-foreground)' }}>
-                    {r.error_message || '—'}
-                  </td>
-                  {isEditable && (
-                    <td style={{ textAlign: 'center' }}>
-                      <button
-                        className="btn-trash"
-                        title="Remove contact"
-                        onClick={() => handleDeleteRecipient(r.id)}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--error)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--error-glow)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3 6 5 6 21 6"></polyline>
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+
+        {activeTab === 'all' ? (
+          <>
+            <div className="flex-between" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-subtle)' }}>
+              <h2 className="section-title">Outreach Log</h2>
+              <button 
+                className="btn btn-secondary" 
+                style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                onClick={handleDownloadCsv}
+                disabled={recipients.length === 0}
+              >
+                Download CSV
+              </button>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Recipient</th>
+                    <th>Company</th>
+                    <th>Status</th>
+                    <th>Sent At</th>
+                    <th>Details</th>
+                    {isEditable && <th style={{ width: '60px', textAlign: 'center' }}>Action</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {recipients.length === 0 ? (
+                    <tr>
+                      <td colSpan={isEditable ? 6 : 5} style={{ textAlign: 'center', padding: '40px', color: 'var(--muted-foreground)' }}>
+                        No recipients loaded.
+                      </td>
+                    </tr>
+                  ) : recipients.map((r) => (
+                    <tr key={r.id} className={`outreach-log-row status-${r.status}`}>
+                      <td style={{ fontWeight: 600 }}>{r.email}</td>
+                      <td style={{ color: 'var(--muted-foreground)' }}>{r.company || '—'}</td>
+                      <td><StatusBadge status={r.status} /></td>
+                      <td style={{ color: 'var(--muted-foreground)', fontSize: '0.82rem' }}>
+                        {r.sent_at ? new Date(r.sent_at).toLocaleString() : '—'}
+                      </td>
+                      <td style={{ fontSize: '0.82rem', color: r.status === 'failed' ? 'var(--error)' : 'var(--muted-foreground)' }}>
+                        {r.error_message || '—'}
+                      </td>
+                      {isEditable && (
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            className="btn-trash"
+                            title="Remove contact"
+                            onClick={() => handleDeleteRecipient(r.id)}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--error)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--error-glow)'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6"></polyline>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <FailedContactsTab 
+            campaignId={id} 
+            recipients={recipients} 
+            onRefresh={fetchData} 
+            isEditable={isEditable}
+            setActiveTab={setActiveTab}
+          />
+        )}
       </div>
     </div>
   );
