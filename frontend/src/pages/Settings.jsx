@@ -24,17 +24,52 @@ export default function Settings() {
 
   useEffect(() => { fetchSenders(); }, []);
 
+  const getErrorMessage = (err, fallback) => {
+    if (err.response?.data?.detail) {
+      const detail = err.response.data.detail;
+      if (typeof detail === 'string') return detail;
+      if (Array.isArray(detail)) {
+        return detail.map(d => `${d.loc ? d.loc.slice(1).join(' ') : ''} ${d.msg}`.trim()).join(', ');
+      }
+      return JSON.stringify(detail);
+    }
+    return err.message || fallback;
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     setMessage({ text: '', type: '' });
+
+    if (!fromName.trim()) {
+      setMessage({ text: 'Sender Name is required', type: 'error' });
+      setSaving(false);
+      return;
+    }
+    if (!username.trim()) {
+      setMessage({ text: 'Gmail Address is required', type: 'error' });
+      setSaving(false);
+      return;
+    }
+    if (!password.trim()) {
+      setMessage({ text: 'Password is required', type: 'error' });
+      setSaving(false);
+      return;
+    }
+    const parsedPort = parseInt(port);
+    if (isNaN(parsedPort) || parsedPort <= 0) {
+      setMessage({ text: 'A valid port number is required', type: 'error' });
+      setSaving(false);
+      return;
+    }
+
     try {
       const fd = new FormData();
       if (editingId) fd.append('sender_id', editingId);
       fd.append('host', host);
-      fd.append('port', port);
+      fd.append('port', parsedPort);
       fd.append('username', username);
-      fd.append('password', password === '••••••••••••••••' ? '' : password);
+      fd.append('password', password);
       fd.append('from_name', fromName);
       fd.append('from_email', username);
       const res = await api.post('/api/settings/smtp', fd);
@@ -42,26 +77,49 @@ export default function Settings() {
       resetForm();
       fetchSenders();
     } catch (err) {
-      setMessage({ text: err.response?.data?.detail || 'Failed to save settings', type: 'error' });
+      setMessage({ text: getErrorMessage(err, 'Failed to save settings'), type: 'error' });
     } finally { setSaving(false); }
   };
 
   const handleTest = async () => {
     setTesting(true);
     setMessage({ text: '', type: '' });
+
+    if (!username.trim()) {
+      setMessage({ text: 'Gmail Address is required for connection test', type: 'error' });
+      setTesting(false);
+      return;
+    }
+    if (!password.trim()) {
+      setMessage({ text: 'Password/App Password is required for connection test', type: 'error' });
+      setTesting(false);
+      return;
+    }
+    const parsedPort = parseInt(port);
+    if (isNaN(parsedPort) || parsedPort <= 0) {
+      setMessage({ text: 'A valid port number is required', type: 'error' });
+      setTesting(false);
+      return;
+    }
+    if (!host.trim()) {
+      setMessage({ text: 'SMTP Host is required', type: 'error' });
+      setTesting(false);
+      return;
+    }
+
     try {
       const fd = new FormData();
       if (editingId) fd.append('sender_id', editingId);
       fd.append('host', host);
-      fd.append('port', port);
+      fd.append('port', parsedPort);
       fd.append('username', username);
-      fd.append('password', password === '••••••••••••••••' ? '' : password);
-      fd.append('from_name', fromName);
+      fd.append('password', password);
+      fd.append('from_name', fromName || username);
       fd.append('from_email', username);
       const res = await api.post('/api/settings/smtp/test', fd);
       setMessage({ text: res.data.message, type: 'success' });
     } catch (err) {
-      setMessage({ text: err.response?.data?.detail || 'SMTP test failed', type: 'error' });
+      setMessage({ text: getErrorMessage(err, 'SMTP test failed'), type: 'error' });
     } finally { setTesting(false); }
   };
 
@@ -83,7 +141,7 @@ export default function Settings() {
       if (editingId === id) resetForm();
       fetchSenders();
     } catch (err) {
-      setMessage({ text: err.response?.data?.detail || 'Failed to delete', type: 'error' });
+      setMessage({ text: getErrorMessage(err, 'Failed to delete'), type: 'error' });
     }
   };
 
@@ -111,7 +169,7 @@ export default function Settings() {
       {/* Alert */}
       {message.text && (
         <div className={`alert alert-${message.type === 'success' ? 'success' : 'error'}`} style={{ marginBottom: '24px' }}>
-          {message.type === 'success' ? '✓' : '⚠️'} {message.text}
+          {message.type === 'success' ? '✓' : '!'} {message.text}
         </div>
       )}
 
@@ -120,7 +178,7 @@ export default function Settings() {
         {/* ── Add / Edit Form ── */}
         <div className="card" style={{ padding: '24px' }}>
           <h2 className="section-title" style={{ marginBottom: '20px' }}>
-            {editingId ? '✏️ Edit Sender' : '➕ Add Sender'}
+            {editingId ? 'Edit Sender' : 'Add Sender'}
           </h2>
 
           <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
@@ -131,14 +189,14 @@ export default function Settings() {
 
             <div className="form-group">
               <label className="form-label">Gmail Address</label>
-              <input type="email" className="form-control" placeholder="you@gmail.com" value={username} onChange={e => setUsername(e.target.value)} required />
+              <input type="email" className="form-control" placeholder="you@gmail.com" value={username} onChange={e => setUsername(e.target.value)} required autoComplete="off" />
             </div>
 
             <div className="form-group">
               <label className="form-label">Gmail App Password</label>
-              <input type="password" className="form-control" placeholder="16-character app password" value={password} onChange={e => setPassword(e.target.value)} required />
+              <input type="password" className="form-control" placeholder="16-character app password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="new-password" />
               <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)' }}>
-                🔑 Use an App Password — not your account password. <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700 }}>Generate one here →</a>
+                Use an App Password — not your account password. <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700 }}>Generate one here →</a>
               </span>
             </div>
 
@@ -161,7 +219,7 @@ export default function Settings() {
 
             <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
               <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={saving || testing}>
-                {saving ? 'Saving…' : editingId ? 'Update Sender' : '+ Add Sender'}
+                {saving ? 'Saving…' : editingId ? 'Update Sender' : 'Add Sender'}
               </button>
               {editingId && (
                 <button type="button" className="btn btn-secondary" onClick={resetForm} disabled={saving || testing}>
@@ -171,7 +229,7 @@ export default function Settings() {
             </div>
 
             <button type="button" className="btn btn-secondary" onClick={handleTest} disabled={saving || testing || !username || !password}>
-              {testing ? 'Testing…' : '🧪 Test Connection'}
+              {testing ? 'Testing…' : 'Test Connection'}
             </button>
           </form>
         </div>
@@ -187,7 +245,7 @@ export default function Settings() {
 
           {senders.length === 0 ? (
             <div className="empty-state" style={{ padding: '40px 16px' }}>
-              <div className="empty-state-icon">📬</div>
+              <div className="empty-state-icon" style={{ fontSize: '2rem', color: 'var(--muted-foreground)' }}>✉</div>
               <p style={{ fontSize: '0.88rem' }}>No sender accounts yet. Add one on the left.</p>
             </div>
           ) : (
@@ -206,7 +264,7 @@ export default function Settings() {
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       border: editingId === s.id ? '1px solid var(--primary)' : '1px solid var(--border)',
-                      boxShadow: editingId === s.id ? '0 0 0 3px rgba(200,80,60,0.1)' : 'var(--shadow-sm)',
+                      boxShadow: editingId === s.id ? '0 0 0 3px rgba(37,99,235,0.15)' : 'var(--shadow-sm)',
                       transition: 'border-color 0.2s, box-shadow 0.2s'
                     }}
                   >

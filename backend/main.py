@@ -5,7 +5,7 @@ import shutil
 import smtplib
 from pathlib import Path
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -161,7 +161,8 @@ def test_smtp(
 ):
     try:
         # Resolve password
-        if not password or password == "••••••••••••••••":
+        is_placeholder = not password or password == "" or password == "••••••••••••••••"
+        if is_placeholder:
             if sender_id:
                 settings = db.query(SMTPSettings).filter(SMTPSettings.id == sender_id, SMTPSettings.user_id == current_user.id).first()
             else:
@@ -181,6 +182,8 @@ def test_smtp(
         server.sendmail(from_email, current_user.email, test_msg)
         server.quit()
         return {"message": "SMTP Connection verified and test email sent!"}
+    except HTTPException as he:
+        raise he
     except smtplib.SMTPAuthenticationError:
         raise HTTPException(status_code=400, detail="SMTP Authentication failed. Check username and App Password.")
     except Exception as e:
@@ -217,46 +220,13 @@ async def create_campaign(
     subject_template: str = Form(...),
     body_template: str = Form(...),
     sender_id: int = Form(...),
-    contacts_csv: UploadFile = File(...),
+    contacts_csv: Optional[UploadFile] = File(None),
     attachment: Optional[UploadFile] = File(None),
     attachment_display_name: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Parse CSV first
-    contents = await contacts_csv.read()
-    try:
-        csv_text = contents.decode("utf-8")
-        reader = csv.DictReader(io.StringIO(csv_text))
-        rows = list(reader)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to read CSV file: {e}")
-
-    if not rows:
-        raise HTTPException(status_code=400, detail="CSV file is empty")
-
-    # Normalize keys to locate email and company fields
-    normalized_keys = {k.strip().lower(): k for k in rows[0].keys()}
-    email_key = None
-    company_key = None
-
-    for k in ["email", "email address", "mail"]:
-        if k in normalized_keys:
-            email_key = normalized_keys[k]
-            break
-            
-    for k in ["company", "company name", "org", "organization"]:
-        if k in normalized_keys:
-            company_key = normalized_keys[k]
-            break
-
-    if not email_key:
-        raise HTTPException(
-            status_code=400,
-            detail=f"CSV must contain an 'email' column. Headers found: {list(rows[0].keys())}"
-        )
-
-    # 1. Save Campaign
+    # 1. Save Campaign first
     new_campaign = Campaign(
         user_id=current_user.id,
         name=name,
@@ -272,33 +242,59 @@ async def create_campaign(
     db.refresh(new_campaign)
 
     # 2. Save Attachment if present
-    if attachment:
+    if attachment and attachment.filename:
         attachment_path = UPLOADS_DIR / f"{new_campaign.id}_{attachment.filename}"
         with attachment_path.open("wb") as buffer:
             shutil.copyfileobj(attachment.file, buffer)
 
-    # 3. Add Recipients
-    recipients_list = []
-    for r in rows:
-        email = r.get(email_key, "").strip()
-        if not email or "@" not in email:
-            continue  # Skip invalid rows
-        company = r.get(company_key, "").strip() if company_key else ""
-        
-        recipients_list.append(Recipient(
-            campaign_id=new_campaign.id,
-            email=email,
-            company=company,
-            status="pending"
-        ))
+    # 3. Parse and add recipients if CSV was provided
+    if contacts_csv and contacts_csv.filename:
+        contents = await contacts_csv.read()
+        try:
+            csv_text = contents.decode("utf-8")
+            reader = csv.DictReader(io.StringIO(csv_text))
+            rows = list(reader)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to read CSV file: {e}")
 
-    if not recipients_list:
-        db.delete(new_campaign)
-        db.commit()
-        raise HTTPException(status_code=400, detail="No valid email contacts found in CSV")
+        if rows:
+            # Normalize keys to locate email and company fields
+            normalized_keys = {k.strip().lower(): k for k in rows[0].keys()}
+            email_key = None
+            company_key = None
 
-    db.bulk_save_objects(recipients_list)
-    db.commit()
+            for k in ["email", "email address", "mail"]:
+                if k in normalized_keys:
+                    email_key = normalized_keys[k]
+                    break
+
+            for k in ["company", "company name", "org", "organization"]:
+                if k in normalized_keys:
+                    company_key = normalized_keys[k]
+                    break
+
+            if not email_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"CSV must contain an 'email' column. Headers found: {list(rows[0].keys())}"
+                )
+
+            recipients_list = []
+            for r in rows:
+                email = r.get(email_key, "").strip()
+                if not email or "@" not in email:
+                    continue
+                company = r.get(company_key, "").strip() if company_key else ""
+                recipients_list.append(Recipient(
+                    campaign_id=new_campaign.id,
+                    email=email,
+                    company=company,
+                    status="pending"
+                ))
+
+            if recipients_list:
+                db.bulk_save_objects(recipients_list)
+                db.commit()
 
     return {"message": "Campaign created successfully", "campaign_id": new_campaign.id}
 
@@ -428,3 +424,233 @@ def delete_campaign(id: int, current_user: User = Depends(get_current_user), db:
     db.delete(campaign)
     db.commit()
     return {"message": "Campaign deleted successfully"}
+
+
+# ── Enhanced Campaign Management Endpoints ─────────────────────────────────────
+
+@app.put("/api/campaigns/{id}")
+def update_campaign(
+    id: int,
+    name: str = Form(...),
+    subject_template: str = Form(...),
+    body_template: str = Form(...),
+    sender_id: Optional[int] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.user_id == current_user.id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    if campaign.status not in ("draft", "paused"):
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot edit a campaign that is active or completed. Please pause it first."
+        )
+    
+    campaign.name = name
+    campaign.subject_template = subject_template
+    campaign.body_template = body_template
+    if sender_id is not None:
+        campaign.sender_id = sender_id
+    db.commit()
+    db.refresh(campaign)
+    return {
+        "message": "Campaign updated successfully", 
+        "campaign": {
+            "id": campaign.id,
+            "name": campaign.name,
+            "subject_template": campaign.subject_template,
+            "body_template": campaign.body_template,
+            "status": campaign.status,
+            "sender_id": campaign.sender_id
+        }
+    }
+
+
+@app.post("/api/campaigns/{id}/recipients")
+def add_recipient(
+    id: int,
+    email: str = Form(...),
+    company: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.user_id == current_user.id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    email = email.strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email address")
+    
+    # Check duplicate in this campaign
+    existing = db.query(Recipient).filter(
+        Recipient.campaign_id == id, 
+        Recipient.email == email
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Recipient email already exists in this campaign")
+    
+    new_rec = Recipient(
+        campaign_id=id,
+        email=email,
+        company=company.strip() if company else "",
+        status="pending"
+    )
+    db.add(new_rec)
+    db.commit()
+    db.refresh(new_rec)
+    return {
+        "message": "Recipient added successfully", 
+        "recipient": {
+            "id": new_rec.id,
+            "email": new_rec.email,
+            "company": new_rec.company,
+            "status": new_rec.status
+        }
+    }
+
+
+@app.post("/api/campaigns/{id}/recipients/csv")
+async def upload_recipients_csv(
+    id: int,
+    contacts_csv: UploadFile = File(...),
+    mode: str = Form("append"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.user_id == current_user.id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    if mode not in ("append", "replace"):
+        raise HTTPException(status_code=400, detail="Invalid mode, must be 'append' or 'replace'")
+
+    contents = await contacts_csv.read()
+    try:
+        csv_text = contents.decode("utf-8")
+        reader = csv.DictReader(io.StringIO(csv_text))
+        rows = list(reader)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read CSV file: {e}")
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="CSV file is empty")
+
+    # Normalize keys
+    normalized_keys = {k.strip().lower(): k for k in rows[0].keys()}
+    email_key = None
+    company_key = None
+
+    for k in ["email", "email address", "mail"]:
+        if k in normalized_keys:
+            email_key = normalized_keys[k]
+            break
+            
+    for k in ["company", "company name", "org", "organization"]:
+        if k in normalized_keys:
+            company_key = normalized_keys[k]
+            break
+
+    if not email_key:
+        raise HTTPException(
+            status_code=400,
+            detail=f"CSV must contain an 'email' column. Headers found: {list(rows[0].keys())}"
+        )
+
+    recipients_list = []
+    existing_emails = set()
+    if mode == "append":
+        existing = db.query(Recipient.email).filter(Recipient.campaign_id == id).all()
+        existing_emails = {e[0].lower() for e in existing}
+
+    for r in rows:
+        email = r.get(email_key, "").strip()
+        if not email or "@" not in email:
+            continue
+        company = r.get(company_key, "").strip() if company_key else ""
+        
+        if mode == "append" and email.lower() in existing_emails:
+            continue
+            
+        recipients_list.append(Recipient(
+            campaign_id=id,
+            email=email,
+            company=company,
+            status="pending"
+        ))
+
+    if not recipients_list and mode == "append":
+        return {"message": "No new recipients to add (all were duplicates or invalid)."}
+
+    if mode == "replace":
+        db.query(Recipient).filter(Recipient.campaign_id == id).delete()
+        db.commit()
+
+    if recipients_list:
+        db.bulk_save_objects(recipients_list)
+        db.commit()
+
+    return {"message": f"Successfully uploaded {len(recipients_list)} recipients in {mode} mode"}
+
+
+@app.get("/api/campaigns/{id}/recipients/csv")
+def download_recipients_csv(
+    id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.user_id == current_user.id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    recipients = db.query(Recipient).filter(Recipient.campaign_id == id).all()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["company", "email", "status", "error_message"])
+    for r in recipients:
+        writer.writerow([r.company or "", r.email, r.status, r.error_message or ""])
+        
+    csv_content = output.getvalue()
+    output.close()
+    
+    filename = f"campaign_{id}_recipients.csv"
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@app.delete("/api/campaigns/{id}/recipients/{recipient_id}")
+def delete_recipient(
+    id: int,
+    recipient_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.user_id == current_user.id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    recipient = db.query(Recipient).filter(
+        Recipient.id == recipient_id, 
+        Recipient.campaign_id == id
+    ).first()
+    if not recipient:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+        
+    db.delete(recipient)
+    db.commit()
+    return {"message": "Recipient deleted successfully"}
+
+
+@app.get("/api/sample-csv")
+def get_sample_csv():
+    csv_content = "company,email\nGoogle,leads@google.com\nApple,jobs@apple.com\n"
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=sample_contacts.csv"}
+    )

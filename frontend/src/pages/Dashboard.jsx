@@ -1,95 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../App';
-
-/* ── Rich Text Editor ─────────────────────────────────────────────────────── */
-function RichEditor({ value, onChange }) {
-  const editorRef = useRef(null);
-  const initialized = useRef(false);
-
-  useEffect(() => {
-    if (editorRef.current && !initialized.current) {
-      editorRef.current.innerHTML = value || '';
-      initialized.current = true;
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const exec = (cmd, val = null) => {
-    editorRef.current?.focus();
-    document.execCommand(cmd, false, val);
-    if (editorRef.current) onChange(editorRef.current.innerHTML);
-  };
-
-  const TBtn = ({ label, cmd, val, title }) => (
-    <button
-      type="button"
-      title={title || label}
-      onMouseDown={(e) => { e.preventDefault(); exec(cmd, val); }}
-      style={{
-        background: 'none', border: 'none', color: 'var(--muted-foreground)',
-        cursor: 'pointer', padding: '3px 8px', borderRadius: '4px',
-        fontSize: '0.82rem', fontWeight: 700, lineHeight: 1.4,
-        transition: 'color 0.15s, background 0.15s', fontFamily: 'var(--font-body)'
-      }}
-      onMouseEnter={e => { e.currentTarget.style.background = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--foreground)'; }}
-      onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--muted-foreground)'; }}
-    >
-      {label}
-    </button>
-  );
-
-  const Sep = () => <span style={{ width: '1px', height: '16px', background: 'var(--border-mid)', margin: '0 3px', display: 'inline-block' }} />;
-
-  return (
-    <div>
-      <div className="rich-editor-toolbar">
-        <TBtn label="B" cmd="bold" title="Bold" />
-        <TBtn label="I" cmd="italic" title="Italic" />
-        <TBtn label="U" cmd="underline" title="Underline" />
-        <Sep />
-        <TBtn label="H2" cmd="formatBlock" val="h2" title="Heading" />
-        <TBtn label="P"  cmd="formatBlock" val="p"  title="Paragraph" />
-        <Sep />
-        <TBtn label="• List" cmd="insertUnorderedList" title="Bullet list" />
-        <TBtn label="1. List" cmd="insertOrderedList" title="Numbered list" />
-        <Sep />
-        <button
-          type="button"
-          title="Insert Link"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            const url = prompt('Enter URL:');
-            if (url) exec('createLink', url);
-          }}
-          style={{
-            background: 'none', border: 'none', color: 'var(--muted-foreground)',
-            cursor: 'pointer', padding: '3px 8px', borderRadius: '4px',
-            fontSize: '0.82rem', fontWeight: 700, lineHeight: 1.4,
-            fontFamily: 'var(--font-body)', transition: 'color 0.15s, background 0.15s'
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--foreground)'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--muted-foreground)'; }}
-        >
-          🔗 Link
-        </button>
-        <TBtn label="Clear" cmd="removeFormat" title="Clear formatting" />
-      </div>
-      <div
-        ref={editorRef}
-        contentEditable
-        suppressContentEditableWarning
-        className="rich-editor-area"
-        onInput={() => { if (editorRef.current) onChange(editorRef.current.innerHTML); }}
-        onKeyDown={(e) => {
-          if (e.key === 'Tab') {
-            e.preventDefault();
-            document.execCommand('insertHTML', false, '&nbsp;&nbsp;&nbsp;&nbsp;');
-          }
-        }}
-      />
-    </div>
-  );
-}
+import RichEditor from '../components/RichEditor';
 
 /* ── Status badge helper ──────────────────────────────────────────────────── */
 function StatusBadge({ status }) {
@@ -110,6 +22,7 @@ function StatusBadge({ status }) {
 
 /* ── Dashboard ────────────────────────────────────────────────────────────── */
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState([]);
   const [senders,   setSenders]   = useState([]);
   const [loading,   setLoading]   = useState(true);
@@ -125,7 +38,7 @@ export default function Dashboard() {
   const [creating,  setCreating]    = useState(false);
   const [error,     setError]       = useState('');
 
-  const fetch = async () => {
+  const fetchCampaigns = async () => {
     try {
       const [campRes, sendRes] = await Promise.all([
         api.get('/api/campaigns'),
@@ -143,18 +56,24 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetch();
+    fetchCampaigns();
     const t = setInterval(async () => {
       try { const r = await api.get('/api/campaigns'); setCampaigns(r.data || []); } catch {}
     }, 5000);
     return () => clearInterval(t);
   }, []);
 
+  const resetModal = () => {
+    setName(''); setSubject('');
+    setBody('<p>Hi,</p><p>I noticed what your company <strong>{company}</strong> is doing and wanted to reach out.</p>');
+    setCsvFile(null); setAttachmentFile(null); setAttachmentDisplayName('');
+    setError('');
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
     setError('');
     if (!selectedSenderId) { setError('Please select a sender account first.'); return; }
-    if (!csvFile) { setError('A contacts CSV file is required.'); return; }
 
     setCreating(true);
     const fd = new FormData();
@@ -162,19 +81,18 @@ export default function Dashboard() {
     fd.append('subject_template', subject);
     fd.append('body_template', body);
     fd.append('sender_id', selectedSenderId);
-    fd.append('contacts_csv', csvFile);
+    if (csvFile) fd.append('contacts_csv', csvFile);
     if (attachmentFile) {
       fd.append('attachment', attachmentFile);
       if (attachmentDisplayName) fd.append('attachment_display_name', attachmentDisplayName);
     }
 
     try {
-      await api.post('/api/campaigns', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setName(''); setSubject('');
-      setBody('<p>Hi,</p><p>I noticed what your company <strong>{company}</strong> is doing and wanted to reach out.</p>');
-      setCsvFile(null); setAttachmentFile(null); setAttachmentDisplayName('');
+      const res = await api.post('/api/campaigns', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      resetModal();
       setShowModal(false);
-      fetch();
+      // Redirect to the new campaign so user can add contacts there
+      navigate(`/campaigns/${res.data.campaign_id}`);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to create campaign');
     } finally {
@@ -185,7 +103,19 @@ export default function Dashboard() {
   const handleDelete = async (id, e) => {
     e.preventDefault();
     if (!confirm('Delete this campaign?')) return;
-    try { await api.delete(`/api/campaigns/${id}`); fetch(); } catch { alert('Failed to delete campaign'); }
+    try { await api.delete(`/api/campaigns/${id}`); fetchCampaigns(); } catch { alert('Failed to delete campaign'); }
+  };
+
+  const handleAction = async (id, action, e) => {
+    e.preventDefault();
+    try {
+      const fd = new FormData();
+      fd.append('action', action);
+      await api.post(`/api/campaigns/${id}/action`, fd);
+      fetchCampaigns();
+    } catch (err) {
+      alert(err.response?.data?.detail || `Failed to ${action} campaign`);
+    }
   };
 
   const totalSent   = campaigns.reduce((a, c) => a + c.stats.sent,   0);
@@ -236,75 +166,104 @@ export default function Dashboard() {
         <p style={{ color: 'var(--muted-foreground)' }}>Loading…</p>
       ) : campaigns.length === 0 ? (
         <div className="glass-panel empty-state">
-          <div className="empty-state-icon">✉️</div>
+          <div className="empty-state-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+              <polyline points="22,6 12,13 2,6"></polyline>
+            </svg>
+          </div>
           <h3 style={{ fontFamily: 'var(--font-header)', marginBottom: '8px' }}>No campaigns yet</h3>
           <p style={{ fontSize: '0.88rem', marginBottom: '20px' }}>Upload a contacts list and an email template to get started.</p>
           <button className="btn btn-primary" onClick={() => setShowModal(true)}>Create Campaign</button>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '18px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {campaigns.map((c) => {
             const pct = c.stats.total > 0 ? Math.round((c.stats.sent / c.stats.total) * 100) : 0;
             const sender = senders.find(s => s.id === c.sender_id);
             return (
-              <div key={c.id} className="campaign-card">
-                {/* Top row */}
-                <div className="flex-between">
-                  <div style={{ minWidth: 0 }}>
-                    <Link to={`/campaigns/${c.id}`} style={{ fontFamily: 'var(--font-header)', fontWeight: 800, fontSize: '1.02rem', color: 'var(--foreground)', display: 'block', marginBottom: '3px' }}>
-                      {c.name}
-                    </Link>
-                    {sender && (
-                      <span style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)' }}>
-                        📧 {sender.from_name} &lt;{sender.username}&gt;
-                      </span>
-                    )}
+              <div key={c.id} className="campaign-row-card">
+                {/* 1. Name & Sender */}
+                <div style={{ flex: '1.2', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <Link to={`/campaigns/${c.id}`} style={{ fontFamily: 'var(--font-header)', fontWeight: 800, fontSize: '1.22rem', color: 'var(--foreground)', display: 'block', marginBottom: '6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    {c.name}
+                  </Link>
+                  {sender ? (
+                    <div style={{ fontSize: '0.88rem', color: 'var(--muted-foreground)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {sender.from_name} ({sender.username})
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>No sender account configured</div>
+                  )}
+                </div>
+
+                {/* 2. Subject & Attachment */}
+                <div style={{ flex: '1.2', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div className="eyebrow" style={{ marginBottom: '6px', fontSize: '0.75rem', letterSpacing: '0.05em' }}>Subject Line</div>
+                  <div style={{ fontSize: '0.98rem', color: 'var(--text-secondary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', fontWeight: 500 }} title={c.subject_template}>
+                    {c.subject_template || '—'}
                   </div>
+                  {c.attachment_name && (
+                    <div style={{ fontSize: '0.76rem', color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                      </svg>
+                      <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        {c.attachment_display_name || c.attachment_name}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Progress */}
+                <div style={{ flex: '1', minWidth: '140px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <div className="flex-between" style={{ fontSize: '0.84rem', color: 'var(--muted-foreground)', marginBottom: '6px' }}>
+                    <span>{c.stats.sent}/{c.stats.total} sent</span>
+                    <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{pct}%</span>
+                  </div>
+                  <div className="progress-bar-track" style={{ height: '8px' }}>
+                    <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                    {c.stats.total} total leads
+                  </div>
+                </div>
+
+                {/* 4. Status */}
+                <div style={{ minWidth: '105px', display: 'flex', justifyContent: 'center', alignItems: 'center', transform: 'scale(1.18)' }}>
                   <StatusBadge status={c.status} />
                 </div>
 
-                <div className="divider" />
-
-                {/* Subject */}
-                <div>
-                  <div className="eyebrow" style={{ marginBottom: '3px' }}>Subject</div>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{c.subject_template}</p>
-                </div>
-
-                {c.attachment_name && (
-                  <p style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
-                    📎 {c.attachment_display_name || c.attachment_name}
-                  </p>
-                )}
-
-                {/* Progress */}
-                <div>
-                  <div className="flex-between" style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', marginBottom: '5px' }}>
-                    <span>{c.stats.sent}/{c.stats.total} sent</span>
-                    <span>{pct}%</span>
-                  </div>
-                  <div className="progress-bar-track">
-                    <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex-between" style={{ marginTop: '4px' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)' }}>
-                    {c.stats.total} leads
-                  </span>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <Link to={`/campaigns/${c.id}`} className="btn btn-primary" style={{ padding: '7px 14px', fontSize: '0.8rem' }}>
-                      Open →
-                    </Link>
+                {/* 5. Actions */}
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  {(c.status === 'draft' || c.status === 'paused' || c.status === 'failed') && (
+                    <button
+                      className="btn btn-primary"
+                      style={{ padding: '10px 20px', fontSize: '0.92rem', height: '44px' }}
+                      onClick={(e) => handleAction(c.id, 'start', e)}
+                    >
+                      Start
+                    </button>
+                  )}
+                  {c.status === 'running' && (
                     <button
                       className="btn btn-secondary"
-                      style={{ padding: '7px 12px', fontSize: '0.8rem', color: 'var(--error)', borderColor: 'rgba(220,38,38,0.25)' }}
-                      onClick={(e) => handleDelete(c.id, e)}
+                      style={{ padding: '10px 20px', fontSize: '0.92rem', height: '44px' }}
+                      onClick={(e) => handleAction(c.id, 'pause', e)}
                     >
-                      Delete
+                      Pause
                     </button>
-                  </div>
+                  )}
+                  <Link to={`/campaigns/${c.id}`} className="btn btn-secondary" style={{ padding: '10px 20px', fontSize: '0.92rem', height: '44px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    Edit
+                  </Link>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ padding: '10px 14px', fontSize: '0.92rem', height: '44px', color: 'var(--error)', borderColor: 'rgba(220,38,38,0.2)' }}
+                    onClick={(e) => handleDelete(c.id, e)}
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
             );
@@ -314,16 +273,16 @@ export default function Dashboard() {
 
       {/* ── Create Campaign Modal ─────────────────────────────────────────── */}
       {showModal && (
-        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}>
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) { resetModal(); setShowModal(false); } }}>
           <div className="modal-box">
             <div className="modal-header">
               <h2 className="modal-title">New Outreach Campaign</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
+              <button className="modal-close" onClick={() => { resetModal(); setShowModal(false); }}>×</button>
             </div>
 
             <div className="modal-body">
               {error && (
-                <div className="alert alert-error">⚠️ {error}</div>
+                <div className="alert alert-error">! {error}</div>
               )}
 
               <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
@@ -348,7 +307,7 @@ export default function Dashboard() {
                   <label className="form-label">Subject Line</label>
                   <input type="text" className="form-control" placeholder="e.g. Quick note about {company}" value={subject} onChange={e => setSubject(e.target.value)} required />
                   <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)' }}>
-                    💡 Use <code>{'{company}'}</code> as a placeholder — replaced per recipient.
+                    Use <code>{'{company}'}</code> as a placeholder — replaced per recipient.
                   </span>
                 </div>
 
@@ -360,29 +319,36 @@ export default function Dashboard() {
                   </span>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Contacts CSV <span style={{ color: 'var(--error)' }}>*</span></label>
-                  <input type="file" accept=".csv" className="form-control" onChange={e => setCsvFile(e.target.files[0])} required />
-                  <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)' }}>Must include an <code>email</code> column. Optional: <code>company</code> column.</span>
-                </div>
-
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div className="form-group">
-                    <label className="form-label">Attachment (Optional)</label>
-                    <input type="file" className="form-control" onChange={e => setAttachmentFile(e.target.files[0])} />
+                    <label className="form-label">Contacts CSV <span style={{ fontWeight: 400, color: 'var(--muted-foreground)', fontSize: '0.75rem' }}>(optional)</span></label>
+                    <input type="file" accept=".csv" className="form-control" onChange={e => setCsvFile(e.target.files[0])} />
+                    <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)' }}>Needs an <code>email</code> column. You can also add leads after creation.</span>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Attachment Display Name</label>
-                    <input type="text" className="form-control" placeholder="e.g. Proposal.pdf" value={attachmentDisplayName} onChange={e => setAttachmentDisplayName(e.target.value)} />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>Filename shown to recipients.</span>
+                    <label className="form-label">Attachment <span style={{ fontWeight: 400, color: 'var(--muted-foreground)', fontSize: '0.75rem' }}>(optional)</span></label>
+                    <input type="file" className="form-control" onChange={e => setAttachmentFile(e.target.files[0])} />
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Display name e.g. Proposal.pdf"
+                      value={attachmentDisplayName}
+                      onChange={e => setAttachmentDisplayName(e.target.value)}
+                      style={{ marginTop: '8px' }}
+                    />
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                {/* Info hint */}
+                <div style={{ background: 'var(--primary-subtle, rgba(99,102,241,0.08))', border: '1px solid var(--primary-border, rgba(99,102,241,0.2))', borderRadius: '8px', padding: '10px 14px', fontSize: '0.8rem', color: 'var(--muted-foreground)', marginBottom: '8px' }}>
+                  After creating, you'll be taken to the campaign page where you can add leads individually, import CSV files, edit the template, and launch.
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
                   <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={creating}>
-                    {creating ? 'Creating…' : 'Create Campaign'}
+                    {creating ? 'Creating…' : 'Create Campaign →'}
                   </button>
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
+                  <button type="button" className="btn btn-secondary" onClick={() => { resetModal(); setShowModal(false); }}>
                     Cancel
                   </button>
                 </div>
