@@ -19,17 +19,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        'contact_details',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('type', sa.String(), nullable=False),
-        sa.Column('value', sa.String(), nullable=False),
-        sa.Column('label', sa.String(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_contact_details_id'), 'contact_details', ['id'], unique=False)
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    tables = inspector.get_table_names()
+    if 'contact_details' not in tables:
+        op.create_table(
+            'contact_details',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('type', sa.String(), nullable=False),
+            sa.Column('value', sa.String(), nullable=False),
+            sa.Column('label', sa.String(), nullable=True),
+            sa.PrimaryKeyConstraint('id')
+        )
+        op.create_index(op.f('ix_contact_details_id'), 'contact_details', ['id'], unique=False)
 
 
 def downgrade() -> None:
-    op.drop_index(op.f('ix_contact_details_id'), table_name='contact_details')
-    op.drop_table('contact_details')
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    tables = inspector.get_table_names()
+    if 'contact_details' in tables:
+        op.drop_index(op.f('ix_contact_details_id'), table_name='contact_details')
+        op.drop_table('contact_details')
+

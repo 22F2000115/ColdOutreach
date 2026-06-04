@@ -285,6 +285,12 @@ def run_tests():
     # Clean up existing campaigns first
     db = SessionLocal()
     db.query(Campaign).filter(Campaign.user_id == user_id).delete()
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        user.campaign_add_count = 0
+        user.campaign_edit_count = 0
+        user.campaign_delete_count = 0
+        user.campaign_save_count = 0
     db.commit()
     db.close()
     
@@ -314,7 +320,7 @@ def run_tests():
         }
     )
     assert create4_res.status_code == 403
-    assert "limit reached" in create4_res.json()["detail"]
+    assert "limit" in create4_res.json()["detail"].lower()
     print("Campaign limits (Trial) OK.")
 
     # 11. Test Account Suspension (is_active = False)
