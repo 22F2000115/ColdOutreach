@@ -131,22 +131,90 @@ export default function Dashboard() {
           <h1 className="page-title">Campaigns</h1>
           <p className="page-subtitle">Manage and monitor your outreach campaigns.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          + New Campaign
+        <button
+          className="btn btn-primary"
+          onClick={() => setShowModal(true)}
+          style={{ transition: 'all 0.3s' }}
+          onMouseEnter={(e) => {
+            const icon = e.currentTarget.querySelector('.plus-icon');
+            if (icon) icon.style.transform = 'rotate(90deg)';
+          }}
+          onMouseLeave={(e) => {
+            const icon = e.currentTarget.querySelector('.plus-icon');
+            if (icon) icon.style.transform = 'rotate(0deg)';
+          }}
+        >
+          <svg className="plus-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.25s ease-out' }}>
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          New Campaign
         </button>
       </div>
 
       {/* Stat Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '32px' }}>
         {[
-          { label: 'Total Campaigns', value: campaigns.length, color: 'var(--foreground)' },
-          { label: 'Emails Enqueued', value: totalEmails,       color: 'var(--foreground)' },
-          { label: 'Delivered',        value: totalSent,          color: 'var(--success)' },
-          { label: 'Failures',          value: totalFailed,        color: 'var(--error)' },
-        ].map(({ label, value, color }) => (
-          <div className="metric-card" key={label}>
-            <div className="metric-label">{label}</div>
-            <div className="metric-value" style={{ color }}>{value}</div>
+          { 
+            label: 'Total Campaigns', 
+            value: campaigns.length, 
+            color: 'var(--primary)',
+            bg: 'var(--bg-glass, rgba(99, 102, 241, 0.03))',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                <line x1="6" y1="18" x2="6.01" y2="18"></line>
+              </svg>
+            )
+          },
+          { 
+            label: 'Emails Enqueued', 
+            value: totalEmails,       
+            color: 'var(--info)',
+            bg: 'var(--bg-glass, rgba(14, 165, 233, 0.03))',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                <polyline points="22,6 12,13 2,6"></polyline>
+              </svg>
+            )
+          },
+          { 
+            label: 'Delivered',        
+            value: totalSent,          
+            color: 'var(--success)',
+            bg: 'var(--bg-glass, rgba(22, 163, 74, 0.03))',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+            )
+          },
+          { 
+            label: 'Failures',          
+            value: totalFailed,        
+            color: 'var(--error)',
+            bg: 'var(--bg-glass, rgba(220, 38, 38, 0.03))',
+            icon: (
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            )
+          },
+        ].map(({ label, value, color, bg, icon }) => (
+          <div className="metric-card" key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: bg, borderLeft: `4px solid ${color}` }}>
+            <div>
+              <div className="metric-label">{label}</div>
+              <div className="metric-value" style={{ color }}>{value}</div>
+            </div>
+            <div style={{ color, opacity: 0.8 }}>
+              {icon}
+            </div>
           </div>
         ))}
       </div>
@@ -165,16 +233,26 @@ export default function Dashboard() {
       {loading ? (
         <p style={{ color: 'var(--muted-foreground)' }}>Loading…</p>
       ) : campaigns.length === 0 ? (
-        <div className="glass-panel empty-state">
-          <div className="empty-state-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-              <polyline points="22,6 12,13 2,6"></polyline>
+        <div className="glass-panel empty-state" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 40px', gap: '12px' }}>
+          <div className="empty-state-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '80px', height: '80px', borderRadius: '50%', background: 'var(--surface-hover)', color: 'var(--primary)', marginBottom: '8px' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 2L11 13"></path>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
             </svg>
           </div>
-          <h3 style={{ fontFamily: 'var(--font-header)', marginBottom: '8px' }}>No campaigns yet</h3>
-          <p style={{ fontSize: '0.88rem', marginBottom: '20px' }}>Upload a contacts list and an email template to get started.</p>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>Create Campaign</button>
+          <h3 style={{ fontFamily: 'var(--font-header)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--foreground)' }}>No campaigns yet</h3>
+          <p style={{ fontSize: '0.9rem', color: 'var(--muted-foreground)', maxWidth: '340px', margin: '0 auto 12px', lineHeight: '1.5' }}>Create your first campaign, configure SMTP settings, import contacts, and send emails.</p>
+          <button
+            className="btn btn-primary"
+            style={{
+              padding: '10px 24px',
+              animation: 'pulsing 2s infinite alternate',
+              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+            }}
+            onClick={() => setShowModal(true)}
+          >
+            Create Campaign
+          </button>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -182,7 +260,7 @@ export default function Dashboard() {
             const pct = c.stats.total > 0 ? Math.round((c.stats.sent / c.stats.total) * 100) : 0;
             const sender = senders.find(s => s.id === c.sender_id);
             return (
-              <div key={c.id} className="campaign-row-card">
+              <div key={c.id} className={`campaign-row-card ${c.status}`}>
                 {/* 1. Name & Sender */}
                 <div style={{ flex: '1.2', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   <Link to={`/campaigns/${c.id}`} style={{ fontFamily: 'var(--font-header)', fontWeight: 800, fontSize: '1.22rem', color: 'var(--foreground)', display: 'block', marginBottom: '6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
@@ -222,7 +300,7 @@ export default function Dashboard() {
                     <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{pct}%</span>
                   </div>
                   <div className="progress-bar-track" style={{ height: '8px' }}>
-                    <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
+                    <div className={`progress-bar-fill${c.status === 'running' ? ' shimmer' : ''}`} style={{ width: `${pct}%` }} />
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '6px' }}>
                     {c.stats.total} total leads
@@ -235,34 +313,50 @@ export default function Dashboard() {
                 </div>
 
                 {/* 5. Actions */}
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {(c.status === 'draft' || c.status === 'paused' || c.status === 'failed') && (
                     <button
                       className="btn btn-primary"
-                      style={{ padding: '10px 20px', fontSize: '0.92rem', height: '44px' }}
+                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', gap: '4px' }}
                       onClick={(e) => handleAction(c.id, 'start', e)}
                     >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                      </svg>
                       Start
                     </button>
                   )}
                   {c.status === 'running' && (
                     <button
                       className="btn btn-secondary"
-                      style={{ padding: '10px 20px', fontSize: '0.92rem', height: '44px' }}
+                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', gap: '4px' }}
                       onClick={(e) => handleAction(c.id, 'pause', e)}
                     >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="6" y="4" width="4" height="16"></rect>
+                        <rect x="14" y="4" width="4" height="16"></rect>
+                      </svg>
                       Pause
                     </button>
                   )}
-                  <Link to={`/campaigns/${c.id}`} className="btn btn-secondary" style={{ padding: '10px 20px', fontSize: '0.92rem', height: '44px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Link to={`/campaigns/${c.id}`} className="btn btn-secondary" style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
                     Edit
                   </Link>
                   <button
                     className="btn btn-secondary"
-                    style={{ padding: '10px 14px', fontSize: '0.92rem', height: '44px', color: 'var(--error)', borderColor: 'rgba(220,38,38,0.2)' }}
+                    style={{ padding: '9px 10px', fontSize: '0.88rem', height: '38px', color: 'var(--error)', borderColor: 'rgba(220,38,38,0.15)', background: 'transparent' }}
                     onClick={(e) => handleDelete(c.id, e)}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--error-glow)'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                   >
-                    Delete
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
                   </button>
                 </div>
               </div>

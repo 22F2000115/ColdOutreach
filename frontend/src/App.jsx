@@ -101,13 +101,8 @@ function AppLayout({ children }) {
       <aside className="sidebar">
         {/* Brand */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: '4px', gap: '8px' }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.4rem', fontWeight: 900, color: 'var(--foreground)', letterSpacing: '-0.02em', marginBottom: '2px' }}>
-              Cold<span style={{ color: 'var(--logo-red)' }}>Outreach</span>
-            </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', fontWeight: 600 }}>
-              {user?.email}
-            </div>
+          <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.4rem', fontWeight: 900, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>
+            Cold<span style={{ color: 'var(--logo-red)' }}>Outreach</span>
           </div>
           <button
             onClick={toggleTheme}
@@ -134,31 +129,112 @@ function AppLayout({ children }) {
           </button>
         </div>
 
+        {/* User Profile Card */}
+        {user && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '12px',
+            background: 'var(--bg-secondary)',
+            borderRadius: 'var(--radius)',
+            border: '1px solid var(--border-subtle)',
+            marginTop: '-12px',
+            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.02)'
+          }}>
+            <div style={{
+              width: '38px',
+              height: '38px',
+              borderRadius: '50%',
+              background: 'var(--primary)',
+              color: 'var(--primary-foreground)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 800,
+              fontSize: '0.9rem',
+              letterSpacing: '0.05em',
+              boxShadow: 'var(--shadow-sm)',
+              flexShrink: 0
+            }}>
+              {user.email ? user.email.split('@')[0].substring(0, 2).toUpperCase() : 'U'}
+            </div>
+            <div style={{ minWidth: 0, flexGrow: 1 }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user.email ? user.email.split('@')[0] : 'User'}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user.email}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Nav */}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', flexGrow: 1 }}>
-          <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted-foreground)', padding: '0 4px', marginBottom: '4px' }}>
+          <div style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--muted-foreground)', padding: '0 4px', marginBottom: '8px' }}>
             Navigation
           </div>
           <Link
             to="/"
             className={`sidebar-nav-link${isActive('/') && !isActive('/settings') && !isActive('/campaigns/') ? ' active' : ''}`}
+            style={{ paddingLeft: '16px' }}
           >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '2px', flexShrink: 0 }}>
+              <path d="M22 2L11 13"></path>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
             Campaigns
           </Link>
           <Link
             to="/settings"
             className={`sidebar-nav-link${isActive('/settings') ? ' active' : ''}`}
+            style={{ paddingLeft: '16px' }}
           >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '2px', flexShrink: 0 }}>
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
             SMTP Settings
           </Link>
         </nav>
 
         {/* Sign out */}
         <button
-          className="btn btn-danger"
-          style={{ width: '100%', fontSize: '0.85rem' }}
           onClick={handleLogout}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            width: '100%',
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-btn)',
+            background: 'transparent',
+            border: '1px solid var(--border-subtle)',
+            color: 'var(--muted-foreground)',
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            transition: 'all 0.2s var(--ease-smooth)',
+            marginTop: 'auto'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(220, 38, 38, 0.08)';
+            e.currentTarget.style.color = 'var(--error)';
+            e.currentTarget.style.borderColor = 'rgba(220, 38, 38, 0.2)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = 'var(--muted-foreground)';
+            e.currentTarget.style.borderColor = 'var(--border-subtle)';
+          }}
         >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
           Sign Out
         </button>
       </aside>

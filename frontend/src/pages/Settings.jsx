@@ -13,6 +13,7 @@ export default function Settings() {
   const [saving,    setSaving]    = useState(false);
   const [testing,   setTesting]   = useState(false);
   const [message,   setMessage]   = useState({ text: '', type: '' });
+  const [testResult, setTestResult] = useState(null);
 
   const fetchSenders = async () => {
     try {
@@ -84,25 +85,30 @@ export default function Settings() {
   const handleTest = async () => {
     setTesting(true);
     setMessage({ text: '', type: '' });
+    setTestResult({ status: 'testing', text: 'Testing...' });
 
     if (!username.trim()) {
       setMessage({ text: 'Gmail Address is required for connection test', type: 'error' });
+      setTestResult({ status: 'error', text: 'Missing email' });
       setTesting(false);
       return;
     }
     if (!password.trim()) {
       setMessage({ text: 'Password/App Password is required for connection test', type: 'error' });
+      setTestResult({ status: 'error', text: 'Missing password' });
       setTesting(false);
       return;
     }
     const parsedPort = parseInt(port);
     if (isNaN(parsedPort) || parsedPort <= 0) {
       setMessage({ text: 'A valid port number is required', type: 'error' });
+      setTestResult({ status: 'error', text: 'Invalid port' });
       setTesting(false);
       return;
     }
     if (!host.trim()) {
       setMessage({ text: 'SMTP Host is required', type: 'error' });
+      setTestResult({ status: 'error', text: 'Missing host' });
       setTesting(false);
       return;
     }
@@ -118,8 +124,10 @@ export default function Settings() {
       fd.append('from_email', username);
       const res = await api.post('/api/settings/smtp/test', fd);
       setMessage({ text: res.data.message, type: 'success' });
+      setTestResult({ status: 'success', text: 'Connection Success' });
     } catch (err) {
       setMessage({ text: getErrorMessage(err, 'SMTP test failed'), type: 'error' });
+      setTestResult({ status: 'error', text: 'Connection Failed' });
     } finally { setTesting(false); }
   };
 
@@ -152,6 +160,7 @@ export default function Settings() {
     setPassword('');
     setHost('smtp.gmail.com');
     setPort(465);
+    setTestResult(null);
   };
 
   if (loading) return <p style={{ color: 'var(--muted-foreground)' }}>Loading settings…</p>;
@@ -228,9 +237,22 @@ export default function Settings() {
               )}
             </div>
 
-            <button type="button" className="btn btn-secondary" onClick={handleTest} disabled={saving || testing || !username || !password}>
-              {testing ? 'Testing…' : 'Test Connection'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
+              <button type="button" className="btn btn-secondary" style={{ flexGrow: 1 }} onClick={handleTest} disabled={saving || testing || !username || !password}>
+                {testing ? 'Testing…' : 'Test Connection'}
+              </button>
+              {testResult && (
+                <span className={`badge ${
+                  testResult.status === 'success' ? 'badge-success' :
+                  testResult.status === 'error' ? 'badge-error' :
+                  'badge-running'
+                }`} style={{ fontSize: '0.78rem', padding: '6px 12px' }}>
+                  {testResult.status === 'success' && '✓ '}
+                  {testResult.status === 'error' && '✕ '}
+                  {testResult.text}
+                </span>
+              )}
+            </div>
           </form>
         </div>
 
@@ -238,7 +260,7 @@ export default function Settings() {
         <div className="card" style={{ padding: '24px' }}>
           <div className="flex-between" style={{ marginBottom: '20px' }}>
             <h2 className="section-title">Configured Senders</h2>
-            <span className="badge badge-running" style={{ background: 'rgba(var(--primary)/0.08)', color: 'var(--primary)', borderColor: 'rgba(var(--primary)/0.2)' }}>
+            <span className="badge badge-running" style={{ background: 'var(--surface-hover)', color: 'var(--primary)', borderColor: 'var(--border-subtle)' }}>
               {senders.length} {senders.length === 1 ? 'account' : 'accounts'}
             </span>
           </div>
@@ -263,9 +285,11 @@ export default function Settings() {
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      border: editingId === s.id ? '1px solid var(--primary)' : '1px solid var(--border)',
-                      boxShadow: editingId === s.id ? '0 0 0 3px rgba(37,99,235,0.15)' : 'var(--shadow-sm)',
-                      transition: 'border-color 0.2s, box-shadow 0.2s'
+                      border: '1px solid var(--border)',
+                      borderLeft: editingId === s.id ? '4px solid var(--primary)' : '1px solid var(--border)',
+                      boxShadow: editingId === s.id ? 'var(--shadow-md)' : 'var(--shadow-sm)',
+                      transform: editingId === s.id ? 'translateY(-1px)' : 'none',
+                      transition: 'border-color 0.2s, box-shadow 0.2s, transform 0.2s'
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -288,16 +312,25 @@ export default function Settings() {
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem' }} onClick={() => handleEdit(s)}>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '0.78rem', gap: '4px' }} onClick={() => handleEdit(s)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                          <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
                         Edit
                       </button>
                       <button
                         className="btn btn-secondary"
-                        style={{ padding: '6px 12px', fontSize: '0.78rem', color: 'var(--error)', borderColor: 'rgba(220,38,38,0.25)' }}
+                        style={{ padding: '6px 8px', fontSize: '0.78rem', color: 'var(--error)', borderColor: 'rgba(220,38,38,0.15)', background: 'transparent' }}
                         onClick={() => handleDelete(s.id)}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--error-glow)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
-                        Delete
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
                       </button>
                     </div>
                   </div>
@@ -309,15 +342,59 @@ export default function Settings() {
       </div>
 
       {/* Gmail Guide */}
-      <div className="alert alert-info" style={{ marginTop: '24px' }}>
-        <div>
-          <strong>Gmail Setup Guide</strong>
-          <ol style={{ margin: '8px 0 0', paddingLeft: '20px', fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <li>Enable 2-Factor Authentication on your Google account.</li>
-            <li>Go to <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'inherit', fontWeight: 700, textDecoration: 'underline' }}>myaccount.google.com/apppasswords</a></li>
-            <li>Generate an App Password for "Mail".</li>
-            <li>Use <code>smtp.gmail.com</code>, port <code>465</code> (SSL) or <code>587</code> (TLS).</li>
-          </ol>
+      <div className="card" style={{ marginTop: '24px', padding: '24px' }}>
+        <h2 className="section-title" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--primary)' }}>
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          Gmail App Password Setup Guide
+        </h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+          {[
+            {
+              step: 1,
+              title: "2-Factor Auth",
+              desc: <>Enable <strong>2-Factor Authentication</strong> on your Google account settings.</>
+            },
+            {
+              step: 2,
+              title: "App Passwords",
+              desc: <>Go to the <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }}>Google App Passwords</a> page.</>
+            },
+            {
+              step: 3,
+              title: "Generate Password",
+              desc: <>Select App as <strong>"Mail"</strong>, select Device, and generate the 16-character code.</>
+            },
+            {
+              step: 4,
+              title: "Configure SMTP",
+              desc: <>Use host <code>smtp.gmail.com</code> and port <code>465</code> (SSL/SSL) on the form above.</>
+            }
+          ].map((item) => (
+            <div key={item.step} style={{ display: 'flex', gap: '12px', background: 'var(--bg-secondary)', padding: '16px', borderRadius: 'var(--radius)' }}>
+              <div style={{
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
+                background: 'var(--primary)',
+                color: 'var(--primary-foreground)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 800,
+                fontSize: '0.82rem',
+                flexShrink: 0
+              }}>
+                {item.step}
+              </div>
+              <div>
+                <strong style={{ display: 'block', fontSize: '0.88rem', marginBottom: '4px', fontFamily: 'var(--font-header)', fontWeight: 700 }}>{item.title}</strong>
+                <p style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', lineHeight: 1.4 }}>{item.desc}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
