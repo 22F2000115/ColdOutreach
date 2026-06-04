@@ -50,6 +50,16 @@ export default function AdminDashboard() {
   const [proMaxSmtp, setProMaxSmtp] = useState(3);
   const [proMaxCampaigns, setProMaxCampaigns] = useState(999999);
 
+  const [trialQuotaAdd, setTrialQuotaAdd] = useState(3);
+  const [trialQuotaEdit, setTrialQuotaEdit] = useState(5);
+  const [trialQuotaDelete, setTrialQuotaDelete] = useState(3);
+  const [trialQuotaSave, setTrialQuotaSave] = useState(5);
+
+  const [proQuotaAdd, setProQuotaAdd] = useState(999999);
+  const [proQuotaEdit, setProQuotaEdit] = useState(999999);
+  const [proQuotaDelete, setProQuotaDelete] = useState(999999);
+  const [proQuotaSave, setProQuotaSave] = useState(999999);
+
   // Modal confirmation
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
@@ -62,6 +72,17 @@ export default function AdminDashboard() {
         setTrialMaxCampaigns(res.data.plan_limits.trial?.max_campaigns ?? 3);
         setProMaxSmtp(res.data.plan_limits.pro?.max_smtp_accounts ?? 3);
         setProMaxCampaigns(res.data.plan_limits.pro?.max_campaigns ?? 999999);
+      }
+      if (res.data.plan_quotas) {
+        setTrialQuotaAdd(res.data.plan_quotas.trial?.add_limit ?? 3);
+        setTrialQuotaEdit(res.data.plan_quotas.trial?.edit_limit ?? 5);
+        setTrialQuotaDelete(res.data.plan_quotas.trial?.delete_limit ?? 3);
+        setTrialQuotaSave(res.data.plan_quotas.trial?.save_limit ?? 5);
+
+        setProQuotaAdd(res.data.plan_quotas.pro?.add_limit ?? 999999);
+        setProQuotaEdit(res.data.plan_quotas.pro?.edit_limit ?? 999999);
+        setProQuotaDelete(res.data.plan_quotas.pro?.delete_limit ?? 999999);
+        setProQuotaSave(res.data.plan_quotas.pro?.save_limit ?? 999999);
       }
     } catch (e) {
       console.error(e);
@@ -205,6 +226,18 @@ export default function AdminDashboard() {
         pro: {
           max_smtp_accounts: parseInt(proMaxSmtp),
           max_campaigns: parseInt(proMaxCampaigns)
+        },
+        trial_quotas: {
+          add: parseInt(trialQuotaAdd),
+          edit: parseInt(trialQuotaEdit),
+          delete: parseInt(trialQuotaDelete),
+          save: parseInt(trialQuotaSave)
+        },
+        pro_quotas: {
+          add: parseInt(proQuotaAdd),
+          edit: parseInt(proQuotaEdit),
+          delete: parseInt(proQuotaDelete),
+          save: parseInt(proQuotaSave)
         }
       };
       await api.patch('/api/admin/settings', payload);
@@ -646,6 +679,58 @@ export default function AdminDashboard() {
                     />
                     <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Maximum marketing/outreach campaigns creation limit.</span>
                   </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Add Quota</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={trialQuotaAdd}
+                      onChange={e => setTrialQuotaAdd(e.target.value)}
+                      required
+                      min="0"
+                    />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Maximum new campaigns allowed to create.</span>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Edit Quota</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={trialQuotaEdit}
+                      onChange={e => setTrialQuotaEdit(e.target.value)}
+                      required
+                      min="0"
+                    />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Maximum campaign detail views allowed.</span>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Delete Quota</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={trialQuotaDelete}
+                      onChange={e => setTrialQuotaDelete(e.target.value)}
+                      required
+                      min="0"
+                    />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Maximum campaign deletions allowed.</span>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Save Changes Quota</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={trialQuotaSave}
+                      onChange={e => setTrialQuotaSave(e.target.value)}
+                      required
+                      min="0"
+                    />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Maximum times changes can be saved.</span>
+                  </div>
                 </div>
               </div>
 
@@ -680,6 +765,58 @@ export default function AdminDashboard() {
                       min="0"
                     />
                     <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Use 999999 for unlimited campaigns.</span>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Add Quota</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={proQuotaAdd}
+                      onChange={e => setProQuotaAdd(e.target.value)}
+                      required
+                      min="0"
+                    />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Use 999999 for unlimited.</span>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Edit Quota</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={proQuotaEdit}
+                      onChange={e => setProQuotaEdit(e.target.value)}
+                      required
+                      min="0"
+                    />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Use 999999 for unlimited.</span>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Delete Quota</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={proQuotaDelete}
+                      onChange={e => setProQuotaDelete(e.target.value)}
+                      required
+                      min="0"
+                    />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Use 999999 for unlimited.</span>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Save Changes Quota</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={proQuotaSave}
+                      onChange={e => setProQuotaSave(e.target.value)}
+                      required
+                      min="0"
+                    />
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Use 999999 for unlimited.</span>
                   </div>
                 </div>
               </div>

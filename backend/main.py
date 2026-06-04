@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import engine, Base, get_db, SessionLocal
-from models import User, SMTPSettings, Campaign, Recipient, ContactDetail
+from models import User, SMTPSettings, Campaign, Recipient, ContactDetail, PlanQuota
 from auth import get_password_hash, verify_password, create_access_token, create_refresh_token, get_current_user, get_current_admin_user, JWT_SECRET_KEY, ALGORITHM
 from security import encrypt_password
 from worker import send_campaign_emails, get_smtp_connection, UPLOADS_DIR
@@ -89,6 +89,24 @@ def seed_contact_details():
 
 seed_contact_details()
 
+def seed_plan_quotas():
+    db = SessionLocal()
+    try:
+        count = db.query(PlanQuota).count()
+        if count == 0:
+            default_quotas = [
+                PlanQuota(plan="trial", add_limit=3, edit_limit=5, delete_limit=3, save_limit=5),
+                PlanQuota(plan="pro", add_limit=999999, edit_limit=999999, delete_limit=999999, save_limit=999999)
+            ]
+            db.bulk_save_objects(default_quotas)
+            db.commit()
+    except Exception as e:
+        print(f"Error seeding plan quotas: {e}")
+    finally:
+        db.close()
+
+seed_plan_quotas()
+
 app = FastAPI(title="Email Outreach Micro SaaS", version="1.0.0")
 
 # Enable CORS for frontend
@@ -148,6 +166,41 @@ async def check_trial_expiry_middleware(request: Request, call_next):
             except Exception:
                 pass
     return await call_next(request)
+
+def check_quota(user: User, action: str, db: Session):
+    if user.role == "admin":
+        return
+        
+    quota = db.query(PlanQuota).filter(PlanQuota.plan == user.plan).first()
+    if not quota:
+        return
+
+    if action == "add":
+        if user.campaign_add_count >= quota.add_limit:
+            raise HTTPException(status_code=403, detail="You've reached your plan limit. Please upgrade to Pro or contact us for help.")
+    elif action == "edit":
+        if user.campaign_edit_count >= quota.edit_limit:
+            raise HTTPException(status_code=403, detail="You've reached your plan limit. Please upgrade to Pro or contact us for help.")
+    elif action == "delete":
+        if user.campaign_delete_count >= quota.delete_limit:
+            raise HTTPException(status_code=403, detail="You've reached your plan limit. Please upgrade to Pro or contact us for help.")
+    elif action == "save":
+        if user.campaign_save_count >= quota.save_limit:
+            raise HTTPException(status_code=403, detail="You've reached your plan limit. Please upgrade to Pro or contact us for help.")
+
+def increment_usage(user: User, action: str, db: Session):
+    if user.role == "admin":
+        return
+    if action == "add":
+        user.campaign_add_count += 1
+    elif action == "edit":
+        user.campaign_edit_count += 1
+    elif action == "delete":
+        user.campaign_delete_count += 1
+    elif action == "save":
+        user.campaign_save_count += 1
+    db.commit()
+
 
 # ── Auth Endpoints ────────────────────────────────────────────────────────────
 
@@ -251,13 +304,35 @@ def logout(response: Response):
 
 
 @app.get("/api/auth/me")
-def get_me(current_user: User = Depends(get_current_user)):
+def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    quota = db.query(PlanQuota).filter(PlanQuota.plan == current_user.plan).first()
+    if quota:
+        quotas_dict = {
+            "add": quota.add_limit,
+            "edit": quota.edit_limit,
+            "delete": quota.delete_limit,
+            "save": quota.save_limit
+        }
+    else:
+        quotas_dict = {
+            "add": 999999,
+            "edit": 999999,
+            "delete": 999999,
+            "save": 999999
+        }
     return {
         "id": current_user.id,
         "email": current_user.email,
         "plan": current_user.plan,
         "role": current_user.role,
-        "trial_expires_at": current_user.trial_expires_at.isoformat() if current_user.trial_expires_at else None
+        "trial_expires_at": current_user.trial_expires_at.isoformat() if current_user.trial_expires_at else None,
+        "usage": {
+            "add": current_user.campaign_add_count,
+            "edit": current_user.campaign_edit_count,
+            "delete": current_user.campaign_delete_count,
+            "save": current_user.campaign_save_count
+        },
+        "quotas": quotas_dict
     }
 
 
@@ -520,6 +595,8 @@ async def create_campaign(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    check_quota(current_user, "add", db)
+
     # Enforce campaign creation limit
     user_plan = current_user.plan or "trial"
     max_campaigns = PLAN_LIMITS.get(user_plan, {}).get("max_campaigns", 3)
@@ -567,11 +644,13 @@ async def create_campaign(
                 db.bulk_save_objects(recipients_list)
                 db.commit()
 
+    increment_usage(current_user, "add", db)
     return {"message": "Campaign created successfully", "campaign_id": new_campaign.id}
 
 
 @app.get("/api/campaigns/{id}")
 def get_campaign(id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    check_quota(current_user, "edit", db)
     campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.user_id == current_user.id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -581,6 +660,8 @@ def get_campaign(id: int, current_user: User = Depends(get_current_user), db: Se
     failed = db.query(Recipient).filter(Recipient.campaign_id == id, Recipient.status == "failed").count()
     sending = db.query(Recipient).filter(Recipient.campaign_id == id, Recipient.status == "sending").count()
     pending = db.query(Recipient).filter(Recipient.campaign_id == id, Recipient.status == "pending").count()
+    
+    increment_usage(current_user, "edit", db)
     
     return {
         "id": campaign.id,
@@ -682,6 +763,7 @@ def campaign_action(
 
 @app.delete("/api/campaigns/{id}")
 def delete_campaign(id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    check_quota(current_user, "delete", db)
     campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.user_id == current_user.id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -697,6 +779,7 @@ def delete_campaign(id: int, current_user: User = Depends(get_current_user), db:
                 
     db.delete(campaign)
     db.commit()
+    increment_usage(current_user, "delete", db)
     return {"message": "Campaign deleted successfully"}
 
 
@@ -712,6 +795,7 @@ def update_campaign(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    check_quota(current_user, "save", db)
     campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.user_id == current_user.id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -728,6 +812,7 @@ def update_campaign(
         campaign.sender_id = sender_id
     db.commit()
     db.refresh(campaign)
+    increment_usage(current_user, "save", db)
     return {
         "message": "Campaign updated successfully", 
         "campaign": {
@@ -1118,6 +1203,8 @@ class AdminUserUpdate(BaseModel):
 class AdminSettingsUpdate(BaseModel):
     trial: Optional[dict] = None
     pro: Optional[dict] = None
+    trial_quotas: Optional[dict] = None
+    pro_quotas: Optional[dict] = None
 
 @app.get("/api/admin/stats")
 def get_admin_stats(current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):
@@ -1129,13 +1216,24 @@ def get_admin_stats(current_user: User = Depends(get_current_admin_user), db: Se
     emails_sent_today = db.query(Recipient).filter(Recipient.status == "sent", Recipient.sent_at >= today_start).count()
     total_emails_sent = db.query(Recipient).filter(Recipient.status == "sent").count()
     
+    quotas = db.query(PlanQuota).all()
+    plan_quotas_dict = {}
+    for q in quotas:
+        plan_quotas_dict[q.plan] = {
+            "add_limit": q.add_limit,
+            "edit_limit": q.edit_limit,
+            "delete_limit": q.delete_limit,
+            "save_limit": q.save_limit
+        }
+        
     return {
         "total_users": total_users,
         "pro_users": pro_users,
         "active_campaigns": active_campaigns,
         "emails_sent_today": emails_sent_today,
         "total_emails_sent": total_emails_sent,
-        "plan_limits": PLAN_LIMITS
+        "plan_limits": PLAN_LIMITS,
+        "plan_quotas": plan_quotas_dict
     }
 
 @app.get("/api/admin/users")
@@ -1167,6 +1265,11 @@ def update_admin_user(user_id: int, update_data: AdminUserUpdate, current_user: 
     if update_data.plan is not None:
         if update_data.plan not in ["trial", "pro"]:
             raise HTTPException(status_code=400, detail="Invalid plan name. Must be 'trial' or 'pro'.")
+        if target_user.plan != update_data.plan:
+            target_user.campaign_add_count = 0
+            target_user.campaign_edit_count = 0
+            target_user.campaign_delete_count = 0
+            target_user.campaign_save_count = 0
         target_user.plan = update_data.plan
         
     if update_data.role is not None:
@@ -1218,7 +1321,11 @@ def get_admin_campaigns(current_user: User = Depends(get_current_admin_user), db
     return results
 
 @app.patch("/api/admin/settings")
-def update_admin_settings(update_data: AdminSettingsUpdate, current_user: User = Depends(get_current_admin_user)):
+def update_admin_settings(
+    update_data: AdminSettingsUpdate,
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
     global PLAN_LIMITS
     if update_data.trial:
         for k, v in update_data.trial.items():
@@ -1228,7 +1335,51 @@ def update_admin_settings(update_data: AdminSettingsUpdate, current_user: User =
         for k, v in update_data.pro.items():
             if k in PLAN_LIMITS["pro"] and isinstance(v, int):
                 PLAN_LIMITS["pro"][k] = v
-    return PLAN_LIMITS
+
+    if update_data.trial_quotas:
+        trial_quota = db.query(PlanQuota).filter(PlanQuota.plan == "trial").first()
+        if not trial_quota:
+            trial_quota = PlanQuota(plan="trial")
+            db.add(trial_quota)
+        if "add" in update_data.trial_quotas:
+            trial_quota.add_limit = int(update_data.trial_quotas["add"])
+        if "edit" in update_data.trial_quotas:
+            trial_quota.edit_limit = int(update_data.trial_quotas["edit"])
+        if "delete" in update_data.trial_quotas:
+            trial_quota.delete_limit = int(update_data.trial_quotas["delete"])
+        if "save" in update_data.trial_quotas:
+            trial_quota.save_limit = int(update_data.trial_quotas["save"])
+        db.commit()
+
+    if update_data.pro_quotas:
+        pro_quota = db.query(PlanQuota).filter(PlanQuota.plan == "pro").first()
+        if not pro_quota:
+            pro_quota = PlanQuota(plan="pro")
+            db.add(pro_quota)
+        if "add" in update_data.pro_quotas:
+            pro_quota.add_limit = int(update_data.pro_quotas["add"])
+        if "edit" in update_data.pro_quotas:
+            pro_quota.edit_limit = int(update_data.pro_quotas["edit"])
+        if "delete" in update_data.pro_quotas:
+            pro_quota.delete_limit = int(update_data.pro_quotas["delete"])
+        if "save" in update_data.pro_quotas:
+            pro_quota.save_limit = int(update_data.pro_quotas["save"])
+        db.commit()
+
+    quotas = db.query(PlanQuota).all()
+    plan_quotas_dict = {}
+    for q in quotas:
+        plan_quotas_dict[q.plan] = {
+            "add_limit": q.add_limit,
+            "edit_limit": q.edit_limit,
+            "delete_limit": q.delete_limit,
+            "save_limit": q.save_limit
+        }
+
+    return {
+        "plan_limits": PLAN_LIMITS,
+        "plan_quotas": plan_quotas_dict
+    }
 
 
 # ── Contact Us Endpoints ───────────────────────────────────────────────────────

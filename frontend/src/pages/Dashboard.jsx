@@ -31,7 +31,7 @@ function StatusBadge({ status }) {
 /* ── Dashboard ────────────────────────────────────────────────────────────── */
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [senders,   setSenders]   = useState([]);
   const [loading,   setLoading]   = useState(true);
@@ -52,7 +52,16 @@ export default function Dashboard() {
   const campaignLimit = PLAN_LIMITS[userPlan].max_campaigns;
   const isAtCampaignLimit = campaigns.length >= campaignLimit;
 
+  const isAdmin = user?.role === 'admin';
+  const isAddQuotaReached = !isAdmin && user?.usage && user?.quotas && user.usage.add >= user.quotas.add;
+  const isEditQuotaReached = !isAdmin && user?.usage && user?.quotas && user.usage.edit >= user.quotas.edit;
+  const isDeleteQuotaReached = !isAdmin && user?.usage && user?.quotas && user.usage.delete >= user.quotas.delete;
+
   const handleOpenCreateModal = () => {
+    if (isAddQuotaReached) {
+      alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
+      return;
+    }
     if (isAtCampaignLimit) {
       alert(`Campaign limit reached (${campaignLimit} allowed on ${userPlan} plan). Please upgrade to add more.`);
       return;
@@ -112,6 +121,7 @@ export default function Dashboard() {
 
     try {
       const res = await api.post('/api/campaigns', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await refreshUser();
       resetModal();
       setShowModal(false);
       // Redirect to the new campaign so user can add contacts there
@@ -125,8 +135,18 @@ export default function Dashboard() {
 
   const handleDelete = async (id, e) => {
     e.preventDefault();
+    if (isDeleteQuotaReached) {
+      alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
+      return;
+    }
     if (!confirm('Delete this campaign?')) return;
-    try { await api.delete(`/api/campaigns/${id}`); fetchCampaigns(); } catch { alert('Failed to delete campaign'); }
+    try {
+      await api.delete(`/api/campaigns/${id}`);
+      await refreshUser();
+      fetchCampaigns();
+    } catch {
+      alert('Failed to delete campaign');
+    }
   };
 
   const handleAction = async (id, action, e) => {
@@ -157,14 +177,15 @@ export default function Dashboard() {
         <button
           className="btn btn-primary"
           onClick={handleOpenCreateModal}
-          style={{ transition: 'all 0.3s' }}
+          disabled={isAddQuotaReached || isAtCampaignLimit}
+          style={{ transition: 'all 0.3s', opacity: (isAddQuotaReached || isAtCampaignLimit) ? 0.6 : 1, cursor: (isAddQuotaReached || isAtCampaignLimit) ? 'not-allowed' : 'pointer' }}
           onMouseEnter={(e) => {
             const icon = e.currentTarget.querySelector('.plus-icon');
-            if (icon) icon.style.transform = 'rotate(90deg)';
+            if (icon && !(isAddQuotaReached || isAtCampaignLimit)) icon.style.transform = 'rotate(90deg)';
           }}
           onMouseLeave={(e) => {
             const icon = e.currentTarget.querySelector('.plus-icon');
-            if (icon) icon.style.transform = 'rotate(0deg)';
+            if (icon && !(isAddQuotaReached || isAtCampaignLimit)) icon.style.transform = 'rotate(0deg)';
           }}
         >
           <svg className="plus-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.25s ease-out' }}>
@@ -174,6 +195,36 @@ export default function Dashboard() {
           New Campaign
         </button>
       </div>
+
+      {/* Quota Limit Warning Banner */}
+      {(isAddQuotaReached || isEditQuotaReached || isDeleteQuotaReached) && (
+        <div className="alert alert-error" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '10px', flexShrink: 0 }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span style={{ fontSize: '0.92rem', fontWeight: 500 }}>
+              You've reached your plan limit. Please upgrade to Pro or contact us for help.
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {user?.plan !== 'pro' && (
+              <button 
+                onClick={() => navigate('/contact')}
+                className="btn btn-primary" 
+                style={{ padding: '6px 12px', fontSize: '0.8rem', height: '30px' }}
+              >
+                Upgrade to Pro
+              </button>
+            )}
+            <Link 
+              to="/contact" 
+              className="btn btn-secondary" 
+              style={{ padding: '6px 12px', fontSize: '0.8rem', height: '30px', display: 'inline-flex', alignItems: 'center' }}
+            >
+              Contact Us
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '32px' }}>
@@ -269,10 +320,13 @@ export default function Dashboard() {
             className="btn btn-primary"
             style={{
               padding: '10px 24px',
-              animation: 'pulsing 2s infinite alternate',
-              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+              animation: isAddQuotaReached ? 'none' : 'pulsing 2s infinite alternate',
+              boxShadow: isAddQuotaReached ? 'none' : '0 4px 14px rgba(99, 102, 241, 0.4)',
+              opacity: isAddQuotaReached ? 0.6 : 1,
+              cursor: isAddQuotaReached ? 'not-allowed' : 'pointer'
             }}
             onClick={handleOpenCreateModal}
+            disabled={isAddQuotaReached}
           >
             Create Campaign
           </button>
@@ -286,9 +340,19 @@ export default function Dashboard() {
               <div key={c.id} className={`campaign-row-card ${c.status}`}>
                 {/* 1. Name & Sender */}
                 <div style={{ flex: '1.2', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                  <Link to={`/campaigns/${c.id}`} style={{ fontFamily: 'var(--font-header)', fontWeight: 800, fontSize: '1.22rem', color: 'var(--foreground)', display: 'block', marginBottom: '6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                    {c.name}
-                  </Link>
+                  {isEditQuotaReached ? (
+                    <span 
+                      style={{ fontFamily: 'var(--font-header)', fontWeight: 800, fontSize: '1.22rem', color: 'var(--muted-foreground)', display: 'block', marginBottom: '6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', cursor: 'not-allowed' }}
+                      title="Edit quota reached"
+                      onClick={() => alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.")}
+                    >
+                      {c.name}
+                    </span>
+                  ) : (
+                    <Link to={`/campaigns/${c.id}`} style={{ fontFamily: 'var(--font-header)', fontWeight: 800, fontSize: '1.22rem', color: 'var(--foreground)', display: 'block', marginBottom: '6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {c.name}
+                    </Link>
+                  )}
                   {sender ? (
                     <div style={{ fontSize: '0.88rem', color: 'var(--muted-foreground)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                       {sender.from_name} ({sender.username})
@@ -363,19 +427,34 @@ export default function Dashboard() {
                       Pause
                     </button>
                   )}
-                  <Link to={`/campaigns/${c.id}`} className="btn btn-secondary" style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                    </svg>
-                    Edit
-                  </Link>
+                  {isEditQuotaReached ? (
+                    <button 
+                      className="btn btn-secondary" 
+                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px', opacity: 0.6, cursor: 'not-allowed' }}
+                      onClick={() => alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.")}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                      </svg>
+                      Edit
+                    </button>
+                  ) : (
+                    <Link to={`/campaigns/${c.id}`} className="btn btn-secondary" style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                      </svg>
+                      Edit
+                    </Link>
+                  )}
                   <button
                     className="btn btn-secondary"
-                    style={{ padding: '9px 10px', fontSize: '0.88rem', height: '38px', color: 'var(--error)', borderColor: 'rgba(220,38,38,0.15)', background: 'transparent' }}
+                    style={{ padding: '9px 10px', fontSize: '0.88rem', height: '38px', color: isDeleteQuotaReached ? 'var(--muted-foreground)' : 'var(--error)', borderColor: isDeleteQuotaReached ? 'var(--border-subtle)' : 'rgba(220,38,38,0.15)', background: 'transparent', opacity: isDeleteQuotaReached ? 0.6 : 1, cursor: isDeleteQuotaReached ? 'not-allowed' : 'pointer' }}
                     onClick={(e) => handleDelete(c.id, e)}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--error-glow)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    disabled={isDeleteQuotaReached}
+                    onMouseEnter={(e) => { if (!isDeleteQuotaReached) e.currentTarget.style.backgroundColor = 'var(--error-glow)' }}
+                    onMouseLeave={(e) => { if (!isDeleteQuotaReached) e.currentTarget.style.backgroundColor = 'transparent' }}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="3 6 5 6 21 6"></polyline>

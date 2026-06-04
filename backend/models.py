@@ -14,6 +14,10 @@ class User(Base):
     trial_expires_at = Column(DateTime, default=lambda: datetime.datetime.utcnow() + datetime.timedelta(days=30), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     role = Column(String, default="user", nullable=False)
+    campaign_add_count = Column(Integer, default=0, nullable=False)
+    campaign_edit_count = Column(Integer, default=0, nullable=False)
+    campaign_delete_count = Column(Integer, default=0, nullable=False)
+    campaign_save_count = Column(Integer, default=0, nullable=False)
 
     # Relationships
     smtp_accounts = relationship("SMTPSettings", back_populates="user", cascade="all, delete-orphan")
@@ -84,3 +88,15 @@ class ContactDetail(Base):
     type = Column(String, nullable=False)  # "email" or "whatsapp"
     value = Column(String, nullable=False)
     label = Column(String, nullable=True)  # Optional label like "Support", "Sales", "Inquiries"
+
+
+class PlanQuota(Base):
+    __tablename__ = "plan_quotas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plan = Column(String, unique=True, index=True, nullable=False)  # "trial" or "pro"
+    add_limit = Column(Integer, default=999999, nullable=False)
+    edit_limit = Column(Integer, default=999999, nullable=False)
+    delete_limit = Column(Integer, default=999999, nullable=False)
+    save_limit = Column(Integer, default=999999, nullable=False)
+

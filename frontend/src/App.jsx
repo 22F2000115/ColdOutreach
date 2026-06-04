@@ -99,28 +99,37 @@ function AuthProvider({ children }) {
     setTrialExpired(false);
   };
 
+  const fetchUser = async () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      try {
+        const res = await api.get('/api/auth/me');
+        setUser(res.data);
+        return res.data;
+      } catch (err) {
+        if (err.response?.status !== 402) {
+          localStorage.removeItem('token');
+          setUser(null);
+        }
+      }
+    }
+  };
+
+  const refreshUser = async () => {
+    return await fetchUser();
+  };
+
   useEffect(() => {
     setTrialExpiredGlobal = setTrialExpired;
     logoutGlobal = logout;
   }, []);
 
   useEffect(() => {
-    const fetchUser = async () => {
-      const token = localStorage.getItem('token');
-      if (token) {
-        try {
-          const res = await api.get('/api/auth/me');
-          setUser(res.data);
-        } catch (err) {
-          if (err.response?.status !== 402) {
-            localStorage.removeItem('token');
-            setUser(null);
-          }
-        }
-      }
+    const initUser = async () => {
+      await fetchUser();
       setLoading(false);
     };
-    fetchUser();
+    initUser();
   }, []);
 
   useEffect(() => {
@@ -150,7 +159,7 @@ function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, theme, toggleTheme }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, theme, toggleTheme, refreshUser }}>
       {children}
       {trialExpired && <TrialExpiredModal onSignOut={logout} />}
     </AuthContext.Provider>

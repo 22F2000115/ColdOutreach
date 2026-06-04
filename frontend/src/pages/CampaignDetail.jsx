@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { api } from '../App';
+import { api, useAuth } from '../App';
 import RichEditor from '../components/RichEditor';
 import FailedContactsTab from '../components/FailedContactsTab';
 
@@ -26,6 +26,7 @@ function StatusBadge({ status }) {
 export default function CampaignDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, refreshUser } = useAuth();
   const [campaign,    setCampaign]    = useState(null);
   const [recipients,  setRecipients]  = useState([]);
   const [loading,     setLoading]     = useState(true);
@@ -52,6 +53,10 @@ export default function CampaignDetail() {
   const [isDragActive, setIsDragActive] = useState(false);
 
   const isEditable = campaign ? (campaign.status === 'draft' || campaign.status === 'paused') : false;
+
+  const isAdmin = user?.role === 'admin';
+  const isDeleteQuotaReached = !isAdmin && user?.usage && user?.quotas && user.usage.delete >= user.quotas.delete;
+  const isSaveQuotaReached = !isAdmin && user?.usage && user?.quotas && user.usage.save >= user.quotas.save;
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -98,6 +103,7 @@ export default function CampaignDetail() {
       ]);
       setCampaign(campRes.data);
       setRecipients(recRes.data);
+      await refreshUser();
     } catch {
       setMessage({ text: 'Campaign not found or access denied.', type: 'error' });
     } finally {
@@ -139,9 +145,14 @@ export default function CampaignDetail() {
   };
 
   const handleDeleteCampaign = async () => {
+    if (isDeleteQuotaReached) {
+      alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
+      return;
+    }
     if (!confirm('Delete this campaign? This cannot be undone.')) return;
     try {
       await api.delete(`/api/campaigns/${id}`);
+      await refreshUser();
       navigate('/');
     } catch {
       setMessage({ text: 'Failed to delete campaign.', type: 'error' });
@@ -150,6 +161,10 @@ export default function CampaignDetail() {
 
   const handleSaveTemplate = async (e) => {
     e.preventDefault();
+    if (isSaveQuotaReached) {
+      alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
+      return;
+    }
     if (!campName.trim() || !subject.trim()) {
       setMessage({ text: 'Campaign name and subject template are required.', type: 'error' });
       return;
@@ -165,6 +180,7 @@ export default function CampaignDetail() {
         fd.append('sender_id', campaign.sender_id);
       }
       await api.put(`/api/campaigns/${id}`, fd);
+      await refreshUser();
       setMessage({ text: 'Template saved successfully', type: 'success' });
       fetchData();
     } catch (err) {
@@ -299,6 +315,36 @@ export default function CampaignDetail() {
         ← All Campaigns
       </Link>
 
+      {/* Quota Limit Warning Banner */}
+      {(isSaveQuotaReached || isDeleteQuotaReached) && (
+        <div className="alert alert-error" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: '10px', flexShrink: 0 }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span style={{ fontSize: '0.92rem', fontWeight: 500 }}>
+              You've reached your plan limit. Please upgrade to Pro or contact us for help.
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {user?.plan !== 'pro' && (
+              <button 
+                onClick={() => navigate('/contact')}
+                className="btn btn-primary" 
+                style={{ padding: '6px 12px', fontSize: '0.8rem', height: '30px' }}
+              >
+                Upgrade to Pro
+              </button>
+            )}
+            <Link 
+              to="/contact" 
+              className="btn btn-secondary" 
+              style={{ padding: '6px 12px', fontSize: '0.8rem', height: '30px', display: 'inline-flex', alignItems: 'center' }}
+            >
+              Contact Us
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Page header */}
       <div className="page-head" style={{ alignItems: 'flex-start' }}>
         <div>
@@ -325,9 +371,9 @@ export default function CampaignDetail() {
           )}
           <button
             className="btn btn-secondary"
-            style={{ color: 'var(--error)', borderColor: 'rgba(220,38,38,0.25)' }}
+            style={{ color: isDeleteQuotaReached ? 'var(--muted-foreground)' : 'var(--error)', borderColor: isDeleteQuotaReached ? 'var(--border-subtle)' : 'rgba(220,38,38,0.25)', opacity: isDeleteQuotaReached ? 0.6 : 1, cursor: isDeleteQuotaReached ? 'not-allowed' : 'pointer' }}
             onClick={handleDeleteCampaign}
-            disabled={actionLoad || campaign.status === 'running'}
+            disabled={actionLoad || campaign.status === 'running' || isDeleteQuotaReached}
           >
             Delete
           </button>
@@ -460,8 +506,8 @@ export default function CampaignDetail() {
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={!isEditable || savingTemp}
-              style={{ alignSelf: 'flex-start' }}
+              disabled={!isEditable || savingTemp || isSaveQuotaReached}
+              style={{ alignSelf: 'flex-start', opacity: isSaveQuotaReached ? 0.6 : 1, cursor: isSaveQuotaReached ? 'not-allowed' : 'pointer' }}
             >
               {savingTemp ? 'Saving Changes...' : 'Save Changes'}
             </button>
