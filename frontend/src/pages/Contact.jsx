@@ -55,7 +55,7 @@ export default function Contact() {
         {/* Email Card */}
         <div className="card" style={{ padding: '28px', display: 'flex', flexDirection: 'column', gap: '20px', transition: 'transform 0.2s var(--ease-spring)', boxShadow: 'var(--shadow-md)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifycontent: 'center', flexShrink: 0, padding: '12px' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '12px' }}>
               <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
                 <polyline points="22,6 12,13 2,6" />
@@ -91,7 +91,7 @@ export default function Contact() {
         {/* WhatsApp Card */}
         <div className="card" style={{ padding: '28px', display: 'flex', flexDirection: 'column', gap: '20px', transition: 'transform 0.2s var(--ease-spring)', boxShadow: 'var(--shadow-md)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', display: 'flex', alignItems: 'center', justifycontent: 'center', flexShrink: 0, padding: '12px' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'color-mix(in srgb, var(--stat-delivered) 10%, transparent)', color: 'var(--stat-delivered)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '12px' }}>
               <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
               </svg>
@@ -117,7 +117,7 @@ export default function Contact() {
                       {w.label && <strong style={{ display: 'block', fontSize: '0.78rem', color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>{w.label}</strong>}
                       <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--foreground)' }}>{formattedNum}</span>
                     </div>
-                    <a href={`https://wa.me/${cleanNum.replace('+', '')}`} target="_blank" rel="noreferrer" className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', height: '30px', borderColor: 'rgba(34, 197, 94, 0.25)', color: '#16a34a' }}>
+                    <a href={`https://wa.me/${cleanNum.replace('+', '')}`} target="_blank" rel="noreferrer" className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.78rem', height: '30px' }}>
                       Message
                     </a>
                   </div>
@@ -127,6 +127,27 @@ export default function Contact() {
           )}
         </div>
 
+      </div>
+
+      {/* Footer / FAQ Note */}
+      <div style={{ 
+        marginTop: '48px', 
+        textAlign: 'center', 
+        padding: '24px', 
+        background: 'var(--bg-secondary)', 
+        borderRadius: 'var(--radius)', 
+        border: '1px solid var(--border-subtle)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '6px'
+      }}>
+        <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--foreground)' }}>
+          Typical response time: under 24 hours
+        </p>
+        <p style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', margin: 0 }}>
+          Check our <a href="#" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }} onClick={(e) => { e.preventDefault(); alert("FAQ & Help Center coming soon!"); }}>FAQ & Help Center</a> for quick self-help guides.
+        </p>
       </div>
     </div>
   );

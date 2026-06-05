@@ -5,6 +5,8 @@ import shutil
 import smtplib
 import imaplib
 import datetime
+import threading
+from collections import defaultdict
 from typing import List, Optional
 from pydantic import BaseModel
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Response, Request
@@ -23,6 +25,9 @@ from auth import get_password_hash, verify_password, create_access_token, create
 from security import encrypt_password
 from worker import send_campaign_emails, get_smtp_connection, UPLOADS_DIR
 from config import PLAN_LIMITS
+
+user_locks = defaultdict(threading.Lock)
+MAX_CSV_BYTES = 6 * 1024 * 1024  # 6 MB
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -95,24 +100,66 @@ def seed_plan_quotas():
         count = db.query(PlanQuota).count()
         if count == 0:
             default_quotas = [
-                PlanQuota(plan="trial", add_limit=3, edit_limit=5, delete_limit=3, save_limit=5),
-                PlanQuota(plan="pro", add_limit=999999, edit_limit=999999, delete_limit=999999, save_limit=999999)
+                PlanQuota(plan="trial", add_limit=3, edit_limit=5, delete_limit=3, save_limit=5, max_smtp_accounts=1, max_campaigns=3),
+                PlanQuota(plan="pro", add_limit=999999, edit_limit=999999, delete_limit=999999, save_limit=999999, max_smtp_accounts=3, max_campaigns=999999)
             ]
             db.bulk_save_objects(default_quotas)
+            db.commit()
+        else:
+            trial_q = db.query(PlanQuota).filter(PlanQuota.plan == "trial").first()
+            if trial_q:
+                if trial_q.max_smtp_accounts is None:
+                    trial_q.max_smtp_accounts = 1
+                if trial_q.max_campaigns is None:
+                    trial_q.max_campaigns = 3
+            pro_q = db.query(PlanQuota).filter(PlanQuota.plan == "pro").first()
+            if pro_q:
+                if pro_q.max_smtp_accounts is None or pro_q.max_smtp_accounts == 1:
+                    pro_q.max_smtp_accounts = 3
+                if pro_q.max_campaigns is None or pro_q.max_campaigns == 3:
+                    pro_q.max_campaigns = 999999
             db.commit()
     except Exception as e:
         print(f"Error seeding plan quotas: {e}")
     finally:
         db.close()
 
-seed_plan_quotas()
+def sync_plan_limits_from_db():
+    global PLAN_LIMITS
+    db = SessionLocal()
+    try:
+        for p_name in ["trial", "pro"]:
+            quota = db.query(PlanQuota).filter(PlanQuota.plan == p_name).first()
+            if quota:
+                PLAN_LIMITS[p_name]["max_smtp_accounts"] = quota.max_smtp_accounts
+                PLAN_LIMITS[p_name]["max_campaigns"] = quota.max_campaigns
+    except Exception as e:
+        print(f"Error syncing PLAN_LIMITS from DB: {e}")
+    finally:
+        db.close()
 
+seed_plan_quotas()
+sync_plan_limits_from_db()
+
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Email Outreach Micro SaaS", version="1.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # Enable CORS for frontend
+allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+allowed_origins = [orig.strip() for orig in allowed_origins_str.split(",") if orig.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -158,7 +205,17 @@ async def check_trial_expiry_middleware(request: Request, call_next):
 
                 if plan == "trial" and trial_expires_str:
                     trial_expires_at = datetime.datetime.fromisoformat(trial_expires_str)
-                    if datetime.datetime.utcnow() > trial_expires_at:
+                    if datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) > trial_expires_at:
+                        email = payload.get("sub")
+                        if email:
+                            db_verify = SessionLocal()
+                            try:
+                                db_user = db_verify.query(User).filter(User.email == email).first()
+                                if db_user:
+                                    if db_user.plan != "trial" or (db_user.trial_expires_at and datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) <= db_user.trial_expires_at):
+                                        return await call_next(request)
+                            finally:
+                                db_verify.close()
                         return JSONResponse(
                             status_code=402,
                             content={"detail": "trial_expired"}
@@ -201,11 +258,33 @@ def increment_usage(user: User, action: str, db: Session):
         user.campaign_save_count += 1
     db.commit()
 
+def get_plan_limits(plan: str, db: Session) -> dict:
+    quota = db.query(PlanQuota).filter(PlanQuota.plan == plan).first()
+    if quota:
+        return {
+            "max_smtp_accounts": quota.max_smtp_accounts,
+            "max_campaigns": quota.max_campaigns
+        }
+    fallback = PLAN_LIMITS.get(plan, {})
+    return {
+        "max_smtp_accounts": fallback.get("max_smtp_accounts", 1),
+        "max_campaigns": fallback.get("max_campaigns", 3)
+    }
+
 
 # ── Auth Endpoints ────────────────────────────────────────────────────────────
 
 @app.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
-def register(email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    import re
+    email = email.strip().lower()
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        raise HTTPException(status_code=400, detail="Invalid email address format.")
+        
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long.")
+
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -215,7 +294,7 @@ def register(email: str = Form(...), password: str = Form(...), db: Session = De
         email=email,
         hashed_password=hashed_pw,
         plan="trial",
-        trial_expires_at=datetime.datetime.utcnow() + datetime.timedelta(days=30)
+        trial_expires_at=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=30)
     )
     db.add(new_user)
     db.commit()
@@ -224,7 +303,8 @@ def register(email: str = Form(...), password: str = Form(...), db: Session = De
 
 
 @app.post("/api/auth/login")
-def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, response: Response, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
@@ -242,6 +322,7 @@ def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends(), 
     refresh_token = create_refresh_token(data={"sub": user.email})
     
     # Set httpOnly cookie
+    is_prod = os.getenv("ENV", "development") == "production"
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
@@ -249,7 +330,7 @@ def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends(), 
         max_age=7 * 24 * 60 * 60,
         expires=7 * 24 * 60 * 60,
         samesite="lax",
-        secure=False
+        secure=is_prod
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -285,6 +366,7 @@ def refresh_token(request: Request, response: Response, db: Session = Depends(ge
     })
     new_refresh_token = create_refresh_token(data={"sub": user.email})
     
+    is_prod = os.getenv("ENV", "development") == "production"
     response.set_cookie(
         key="refresh_token",
         value=new_refresh_token,
@@ -292,7 +374,7 @@ def refresh_token(request: Request, response: Response, db: Session = Depends(ge
         max_age=7 * 24 * 60 * 60,
         expires=7 * 24 * 60 * 60,
         samesite="lax",
-        secure=False
+        secure=is_prod
     )
     return {"access_token": new_access_token, "token_type": "bearer"}
 
@@ -313,12 +395,20 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
             "delete": quota.delete_limit,
             "save": quota.save_limit
         }
+        limits_dict = {
+            "max_smtp_accounts": quota.max_smtp_accounts,
+            "max_campaigns": quota.max_campaigns
+        }
     else:
         quotas_dict = {
             "add": 999999,
             "edit": 999999,
             "delete": 999999,
             "save": 999999
+        }
+        limits_dict = {
+            "max_smtp_accounts": PLAN_LIMITS[current_user.plan]["max_smtp_accounts"] if current_user.plan in PLAN_LIMITS else 1,
+            "max_campaigns": PLAN_LIMITS[current_user.plan]["max_campaigns"] if current_user.plan in PLAN_LIMITS else 3
         }
     return {
         "id": current_user.id,
@@ -332,7 +422,8 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
             "delete": current_user.campaign_delete_count,
             "save": current_user.campaign_save_count
         },
-        "quotas": quotas_dict
+        "quotas": quotas_dict,
+        "limits": limits_dict
     }
 
 
@@ -384,33 +475,36 @@ def save_smtp(
             settings.from_email = from_email
         elif username is not None:
             settings.from_email = username
+        db.commit()
     else:
-        # Enforce limits using PLAN_LIMITS configuration
-        user_plan = current_user.plan or "trial"
-        max_accounts = PLAN_LIMITS.get(user_plan, {}).get("max_smtp_accounts", 1)
-        existing_count = db.query(SMTPSettings).filter(SMTPSettings.user_id == current_user.id).count()
-        if existing_count >= max_accounts:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"SMTP account limit reached ({max_accounts} account(s) allowed for {user_plan} plan)."
+        with user_locks[current_user.id]:
+            # Enforce limits using PlanQuota from database
+            user_plan = current_user.plan or "trial"
+            limits = get_plan_limits(user_plan, db)
+            max_accounts = limits.get("max_smtp_accounts", 1)
+            existing_count = db.query(SMTPSettings).filter(SMTPSettings.user_id == current_user.id).count()
+            if existing_count >= max_accounts:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"SMTP account limit reached ({max_accounts} account(s) allowed for {user_plan} plan)."
+                )
+            if not host or not port or not username:
+                raise HTTPException(status_code=400, detail="Host, port, and username are required for new SMTP configuration")
+            if not password or password == "••••••••••••••••":
+                raise HTTPException(status_code=400, detail="Password is required for new SMTP configuration")
+            encrypted_pw = encrypt_password(password)
+            settings = SMTPSettings(
+                user_id=current_user.id,
+                host=host,
+                port=port,
+                username=username,
+                encrypted_password=encrypted_pw,
+                from_name=from_name,
+                from_email=from_email or username
             )
-        if not host or not port or not username:
-            raise HTTPException(status_code=400, detail="Host, port, and username are required for new SMTP configuration")
-        if not password or password == "••••••••••••••••":
-            raise HTTPException(status_code=400, detail="Password is required for new SMTP configuration")
-        encrypted_pw = encrypt_password(password)
-        settings = SMTPSettings(
-            user_id=current_user.id,
-            host=host,
-            port=port,
-            username=username,
-            encrypted_password=encrypted_pw,
-            from_name=from_name,
-            from_email=from_email or username
-        )
-        db.add(settings)
-        
-    db.commit()
+            db.add(settings)
+            db.commit()
+            
     return {"message": "SMTP Settings saved successfully"}
 
 
@@ -466,8 +560,12 @@ def test_smtp(
         # Establish connection to verify credentials
         server = get_smtp_connection(host, port, username, password_plain)
         
-        # Send a quick connection test email to user's registered email
-        test_msg = f"Subject: SMTP Test successful\n\nHi!\n\nThis is a test email verifying that your SMTP settings are configured correctly."
+        test_msg = (
+            f"From: {from_name} <{from_email}>\n"
+            f"To: {current_user.email}\n"
+            f"Subject: SMTP Test successful\n\n"
+            f"Hi!\n\nThis is a test email verifying that your SMTP settings are configured correctly."
+        )
         server.sendmail(from_email, current_user.email, test_msg)
         server.quit()
         return {"message": "SMTP Connection verified and test email sent!"}
@@ -563,11 +661,29 @@ def parse_recipients_from_csv_rows(rows: list, campaign_id: int, existing_emails
 @app.get("/api/campaigns")
 def list_campaigns(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     campaigns = db.query(Campaign).filter(Campaign.user_id == current_user.id).order_by(Campaign.created_at.desc()).all()
+    
+    from sqlalchemy import func, case
+    campaign_ids = [c.id for c in campaigns]
+    stats_map = {}
+    if campaign_ids:
+        stats_rows = db.query(
+            Recipient.campaign_id,
+            func.count(Recipient.id).label("total"),
+            func.sum(case((Recipient.status == "sent", 1), else_=0)).label("sent"),
+            func.sum(case((Recipient.status == "failed", 1), else_=0)).label("failed"),
+        ).filter(
+            Recipient.campaign_id.in_(campaign_ids)
+        ).group_by(Recipient.campaign_id).all()
+        
+        stats_map = {row.campaign_id: row for row in stats_rows}
+        
     result = []
     for c in campaigns:
-        total = db.query(Recipient).filter(Recipient.campaign_id == c.id).count()
-        sent = db.query(Recipient).filter(Recipient.campaign_id == c.id, Recipient.status == "sent").count()
-        failed = db.query(Recipient).filter(Recipient.campaign_id == c.id, Recipient.status == "failed").count()
+        stats = stats_map.get(c.id)
+        total = stats.total if (stats and stats.total is not None) else 0
+        sent = stats.sent if (stats and stats.sent is not None) else 0
+        failed = stats.failed if (stats and stats.failed is not None) else 0
+        
         result.append({
             "id": c.id,
             "name": c.name,
@@ -595,62 +711,81 @@ async def create_campaign(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    check_quota(current_user, "add", db)
-
-    # Enforce campaign creation limit
-    user_plan = current_user.plan or "trial"
-    max_campaigns = PLAN_LIMITS.get(user_plan, {}).get("max_campaigns", 3)
-    existing_count = db.query(Campaign).filter(Campaign.user_id == current_user.id).count()
-    if existing_count >= max_campaigns:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Campaign limit reached ({max_campaigns} campaign(s) allowed for {user_plan} plan). Please upgrade to add more."
-        )
-
-    # 1. Save Campaign first
-    new_campaign = Campaign(
-        user_id=current_user.id,
-        name=name,
-        subject_template=subject_template,
-        body_template=body_template,
-        status="draft",
-        sender_id=sender_id,
-        attachment_name=attachment.filename if attachment else None,
-        attachment_display_name=attachment_display_name if attachment_display_name else None
-    )
-    db.add(new_campaign)
-    db.commit()
-    db.refresh(new_campaign)
-
-    # 2. Save Attachment if present
-    if attachment and attachment.filename:
-        attachment_path = UPLOADS_DIR / f"{new_campaign.id}_{attachment.filename}"
-        with attachment_path.open("wb") as buffer:
-            shutil.copyfileobj(attachment.file, buffer)
-
-    # 3. Parse and add recipients if CSV was provided
+    # Enforce size checks on CSV if provided
+    csv_rows = []
     if contacts_csv and contacts_csv.filename:
+        if contacts_csv.size and contacts_csv.size > MAX_CSV_BYTES:
+            raise HTTPException(status_code=400, detail="CSV file too large. Maximum allowed size is 6 MB.")
         contents = await contacts_csv.read()
+        if len(contents) > MAX_CSV_BYTES:
+            raise HTTPException(status_code=400, detail="CSV file too large. Maximum allowed size is 6 MB.")
         try:
             csv_text = contents.decode("utf-8")
             reader = csv.DictReader(io.StringIO(csv_text))
-            rows = list(reader)
+            csv_rows = list(reader)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to read CSV file: {e}")
 
-        if rows:
-            recipients_list = parse_recipients_from_csv_rows(rows, new_campaign.id)
+    with user_locks[current_user.id]:
+        check_quota(current_user, "add", db)
+
+        # Prevent IdOR: Validate SMTP settings ownership
+        if sender_id:
+            smtp_exists = db.query(SMTPSettings).filter(SMTPSettings.id == sender_id, SMTPSettings.user_id == current_user.id).first()
+            if not smtp_exists:
+                raise HTTPException(status_code=400, detail="Invalid sender account or access denied.")
+
+        # Enforce campaign creation limit
+        user_plan = current_user.plan or "trial"
+        limits = get_plan_limits(user_plan, db)
+        max_campaigns = limits.get("max_campaigns", 3)
+        existing_count = db.query(Campaign).filter(Campaign.user_id == current_user.id).count()
+        if existing_count >= max_campaigns:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Campaign limit reached ({max_campaigns} campaign(s) allowed for {user_plan} plan). Please upgrade to add more."
+            )
+
+        # 1. Save Campaign first
+        new_campaign = Campaign(
+            user_id=current_user.id,
+            name=name,
+            subject_template=subject_template,
+            body_template=body_template,
+            status="draft",
+            sender_id=sender_id,
+            attachment_name=attachment.filename if attachment else None,
+            attachment_display_name=attachment_display_name if attachment_display_name else None
+        )
+        db.add(new_campaign)
+        db.commit()
+        db.refresh(new_campaign)
+
+        # 2. Save Attachment if present
+        if attachment and attachment.filename:
+            attachment_path = UPLOADS_DIR / f"{new_campaign.id}_{attachment.filename}"
+            with attachment_path.open("wb") as buffer:
+                shutil.copyfileobj(attachment.file, buffer)
+
+        # 3. Parse and add recipients if CSV was provided
+        if csv_rows:
+            recipients_list = parse_recipients_from_csv_rows(csv_rows, new_campaign.id)
             if recipients_list:
                 db.bulk_save_objects(recipients_list)
                 db.commit()
 
-    increment_usage(current_user, "add", db)
+        increment_usage(current_user, "add", db)
+        
     return {"message": "Campaign created successfully", "campaign_id": new_campaign.id}
 
 
 @app.get("/api/campaigns/{id}")
-def get_campaign(id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    check_quota(current_user, "edit", db)
+def get_campaign(
+    id: int,
+    poll: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     campaign = db.query(Campaign).filter(Campaign.id == id, Campaign.user_id == current_user.id).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -660,8 +795,6 @@ def get_campaign(id: int, current_user: User = Depends(get_current_user), db: Se
     failed = db.query(Recipient).filter(Recipient.campaign_id == id, Recipient.status == "failed").count()
     sending = db.query(Recipient).filter(Recipient.campaign_id == id, Recipient.status == "sending").count()
     pending = db.query(Recipient).filter(Recipient.campaign_id == id, Recipient.status == "pending").count()
-    
-    increment_usage(current_user, "edit", db)
     
     return {
         "id": campaign.id,
@@ -805,11 +938,15 @@ def update_campaign(
             detail="Cannot edit a campaign that is active or completed. Please pause it first."
         )
     
+    if sender_id is not None:
+        smtp_exists = db.query(SMTPSettings).filter(SMTPSettings.id == sender_id, SMTPSettings.user_id == current_user.id).first()
+        if not smtp_exists:
+            raise HTTPException(status_code=400, detail="Invalid sender account or access denied.")
+        campaign.sender_id = sender_id
+
     campaign.name = name
     campaign.subject_template = subject_template
     campaign.body_template = body_template
-    if sender_id is not None:
-        campaign.sender_id = sender_id
     db.commit()
     db.refresh(campaign)
     increment_usage(current_user, "save", db)
@@ -894,7 +1031,12 @@ async def upload_recipients_csv(
     if mode not in ("append", "replace"):
         raise HTTPException(status_code=400, detail="Invalid mode, must be 'append' or 'replace'")
 
+    if contacts_csv.size and contacts_csv.size > MAX_CSV_BYTES:
+        raise HTTPException(status_code=400, detail="CSV file too large. Maximum allowed size is 6 MB.")
+
     contents = await contacts_csv.read()
+    if len(contents) > MAX_CSV_BYTES:
+        raise HTTPException(status_code=400, detail="CSV file too large. Maximum allowed size is 6 MB.")
     try:
         csv_text = contents.decode("utf-8")
         reader = csv.DictReader(io.StringIO(csv_text))
@@ -1095,7 +1237,11 @@ def sync_bounces(
         mail.login(smtp_settings.username, password_decrypted)
         mail.select("INBOX")
         
-        status, messages = mail.search(None, "ALL")
+        since_date = campaign.created_at.strftime("%d-%b-%Y")
+        status, messages = mail.search(
+            None,
+            f'OR FROM "mailer-daemon" FROM "postmaster" SINCE {since_date}'
+        )
         if status != "OK" or not messages[0]:
             mail.logout()
             return {"synced_bounces": 0, "message": "No emails found in inbox"}
@@ -1162,11 +1308,11 @@ def sync_bounces(
                         recipient.error_message = "Asynchronous bounce: Delivery failed (returned to sender)."
                         
                     recipient.sent_at = None
-                    db.commit()
                     
                     recipient_map.pop(email_addr)
                     new_bounces_count += 1
                     
+        db.commit()
         mail.logout()
         
     except imaplib.IMAP4.error as imap_err:
@@ -1212,7 +1358,7 @@ def get_admin_stats(current_user: User = Depends(get_current_admin_user), db: Se
     pro_users = db.query(User).filter(User.role != "admin", User.plan == "pro").count()
     active_campaigns = db.query(Campaign).filter(Campaign.status == "running").count()
     
-    today_start = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).replace(hour=0, minute=0, second=0, microsecond=0)
     emails_sent_today = db.query(Recipient).filter(Recipient.status == "sent", Recipient.sent_at >= today_start).count()
     total_emails_sent = db.query(Recipient).filter(Recipient.status == "sent").count()
     
@@ -1328,13 +1474,32 @@ def update_admin_settings(
 ):
     global PLAN_LIMITS
     if update_data.trial:
+        trial_quota = db.query(PlanQuota).filter(PlanQuota.plan == "trial").first()
+        if not trial_quota:
+            trial_quota = PlanQuota(plan="trial")
+            db.add(trial_quota)
         for k, v in update_data.trial.items():
             if k in PLAN_LIMITS["trial"] and isinstance(v, int):
                 PLAN_LIMITS["trial"][k] = v
+                if k == "max_smtp_accounts":
+                    trial_quota.max_smtp_accounts = v
+                elif k == "max_campaigns":
+                    trial_quota.max_campaigns = v
+        db.commit()
+
     if update_data.pro:
+        pro_quota = db.query(PlanQuota).filter(PlanQuota.plan == "pro").first()
+        if not pro_quota:
+            pro_quota = PlanQuota(plan="pro")
+            db.add(pro_quota)
         for k, v in update_data.pro.items():
             if k in PLAN_LIMITS["pro"] and isinstance(v, int):
                 PLAN_LIMITS["pro"][k] = v
+                if k == "max_smtp_accounts":
+                    pro_quota.max_smtp_accounts = v
+                elif k == "max_campaigns":
+                    pro_quota.max_campaigns = v
+        db.commit()
 
     if update_data.trial_quotas:
         trial_quota = db.query(PlanQuota).filter(PlanQuota.plan == "trial").first()

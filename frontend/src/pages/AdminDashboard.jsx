@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api, useAuth } from '../App';
 
 function formatRelativeTime(dateString) {
@@ -24,6 +25,7 @@ function formatRelativeTime(dateString) {
 }
 
 export default function AdminDashboard() {
+  const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('stats');
   const [stats, setStats] = useState(null);
@@ -43,6 +45,7 @@ export default function AdminDashboard() {
   const [editingContactId, setEditingContactId] = useState(null);
   const [savingContact, setSavingContact] = useState(false);
   const [confirmContactDeleteId, setConfirmContactDeleteId] = useState(null);
+  const [pendingUserUpdate, setPendingUserUpdate] = useState(null);
 
   // Settings form state
   const [trialMaxSmtp, setTrialMaxSmtp] = useState(1);
@@ -271,11 +274,14 @@ export default function AdminDashboard() {
   const targetDeleteUser = users.find(u => u.id === confirmDeleteId);
 
   return (
-    <div style={{ animation: 'fadeIn 0.25s ease-out' }}>
+    <div style={{ animation: 'fadeIn 0.25s ease-out', borderTop: '4px solid var(--accent-primary)', marginTop: '-36px', paddingTop: '32px' }}>
       {/* Header */}
       <div className="page-head">
         <div>
-          <h1 className="page-title">Admin Dashboard</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h1 className="page-title">Admin Dashboard</h1>
+            <span className="badge badge-error" style={{ background: 'var(--error)', color: '#ffffff', fontSize: '0.65rem', padding: '3px 8px', borderRadius: '4px', letterSpacing: '0.05em', fontWeight: 800 }}>Admin Mode</span>
+          </div>
           <p className="page-subtitle">Manage system users, campaigns, global limits, and app health.</p>
         </div>
         <button className="btn btn-secondary" onClick={loadData} disabled={loading} style={{ height: '40px' }}>
@@ -424,7 +430,7 @@ export default function AdminDashboard() {
       {activeTab === 'users' && (
         <div className="card" style={{ overflow: 'hidden' }}>
           {/* Search bar toolbar */}
-          <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', gap: '16px', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '380px' }}>
               <input
                 type="text"
@@ -436,7 +442,7 @@ export default function AdminDashboard() {
               />
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             </div>
-            <span className="badge badge-running" style={{ fontSize: '0.82rem', fontWeight: 600, background: 'var(--surface-hover)', borderColor: 'var(--border-subtle)', color: 'var(--foreground)' }}>
+            <span className="badge badge-running" style={{ fontSize: '0.82rem', fontWeight: 600, background: 'var(--surface-hover)', borderColor: 'var(--border-subtle)', color: 'var(--foreground)', height: '40px', display: 'inline-flex', alignItems: 'center', padding: '0 12px', borderRadius: 'var(--radius-sm)' }}>
               {filteredUsers.length} of {users.length} Users
             </span>
           </div>
@@ -451,14 +457,13 @@ export default function AdminDashboard() {
                   <th>Role</th>
                   <th>Status</th>
                   <th style={{ textAlign: 'center' }}>Campaigns</th>
-                  <th>Suspend</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th style={{ textAlign: 'right', width: '100px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: 'var(--muted-foreground)' }}>
+                    <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: 'var(--muted-foreground)' }}>
                       No users match your search query.
                     </td>
                   </tr>
@@ -498,11 +503,14 @@ export default function AdminDashboard() {
                         </td>
                         <td>
                           {isSelf ? (
-                            <span className="badge badge-success">{u.plan}</span>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <span className="badge badge-success">{u.plan}</span>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)' }} title="You cannot edit your own role or plan."><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            </div>
                           ) : (
                             <select
                               value={u.plan}
-                              onChange={e => handleUpdateUser(u.id, { plan: e.target.value })}
+                              onChange={e => setPendingUserUpdate({ userId: u.id, email: u.email, field: 'plan', value: e.target.value, payload: { plan: e.target.value } })}
                               className="form-control"
                               style={{ width: '90px', minHeight: '30px', height: '30px', padding: '2px 8px', fontSize: '0.82rem' }}
                             >
@@ -513,11 +521,14 @@ export default function AdminDashboard() {
                         </td>
                         <td>
                           {isSelf ? (
-                            <span className="badge badge-running">{u.role}</span>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <span className="badge badge-running">{u.role}</span>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)' }} title="You cannot edit your own role or plan."><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            </div>
                           ) : (
                             <select
                               value={u.role}
-                              onChange={e => handleUpdateUser(u.id, { role: e.target.value })}
+                              onChange={e => setPendingUserUpdate({ userId: u.id, email: u.email, field: 'role', value: e.target.value, payload: { role: e.target.value } })}
                               className="form-control"
                               style={{ width: '90px', minHeight: '30px', height: '30px', padding: '2px 8px', fontSize: '0.82rem' }}
                             >
@@ -534,29 +545,80 @@ export default function AdminDashboard() {
                           )}
                         </td>
                         <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{u.campaign_count}</td>
-                        <td>
+                        <td style={{ textAlign: 'right' }}>
                           {isSelf ? (
                             <span style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>—</span>
                           ) : (
-                            <label className="toggle-switch">
-                              <input
-                                type="checkbox"
-                                checked={!u.is_active}
-                                onChange={() => handleUpdateUser(u.id, { is_active: !u.is_active })}
-                              />
-                              <span className="toggle-slider"></span>
-                            </label>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          {!isSelf && (
-                            <button
-                              className="icon-btn icon-btn-danger"
-                              onClick={() => setConfirmDeleteId(u.id)}
-                              title="Delete User Account"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                            </button>
+                            <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'flex-end', width: '100%' }}>
+                              <button
+                                className="btn btn-secondary"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setPendingUserUpdate({
+                                    userId: u.id,
+                                    email: u.email,
+                                    field: 'status',
+                                    value: u.is_active ? 'Suspended' : 'Active',
+                                    payload: { is_active: !u.is_active }
+                                  });
+                                }}
+                                style={{
+                                  padding: '6px 10px',
+                                  fontSize: '0.78rem',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  borderColor: 'transparent',
+                                  background: 'transparent',
+                                  cursor: 'pointer'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = 'var(--surface-hover)';
+                                  e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = 'transparent';
+                                  e.currentTarget.style.borderColor = 'transparent';
+                                }}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                  <circle cx="12" cy="12" r="10"></circle>
+                                  <line x1="12" y1="8" x2="12" y2="16"></line>
+                                  <line x1="8" y1="12" x2="16" y2="12"></line>
+                                </svg>
+                                {u.is_active ? 'Suspend' : 'Activate'}
+                              </button>
+                              <button
+                                className="btn btn-secondary"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setConfirmDeleteId(u.id);
+                                }}
+                                style={{
+                                  padding: '6px 10px',
+                                  fontSize: '0.78rem',
+                                  color: 'var(--error)',
+                                  borderColor: 'transparent',
+                                  background: 'transparent',
+                                  cursor: 'pointer'
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)';
+                                  e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.2)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = 'transparent';
+                                  e.currentTarget.style.borderColor = 'transparent';
+                                }}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                  <polyline points="3 6 5 6 21 6"></polyline>
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -611,7 +673,13 @@ export default function AdminDashboard() {
                   </tr>
                 ) : (
                   filteredCampaigns.map(c => (
-                    <tr key={c.id}>
+                    <tr 
+                      key={c.id}
+                      onClick={() => navigate(`/campaigns/${c.id}`)}
+                      style={{ cursor: 'pointer' }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--surface-hover)'}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ''}
+                    >
                       <td>{c.id}</td>
                       <td style={{ fontWeight: 600 }}>{c.name}</td>
                       <td>{c.owner_email}</td>
@@ -755,76 +823,183 @@ export default function AdminDashboard() {
                   </div>
 
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Max Campaigns</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label className="form-label" style={{ margin: 0 }}>Max Campaigns</label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        <input
+                          type="checkbox"
+                          checked={proMaxCampaigns === 999999}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setProMaxCampaigns(999999);
+                            } else {
+                              setProMaxCampaigns(10);
+                            }
+                          }}
+                          style={{ width: '14px', height: '14px', accentColor: 'var(--accent-primary)', margin: 0 }}
+                        />
+                        Unlimited
+                      </label>
+                    </div>
                     <input
                       type="number"
                       className="form-control"
-                      value={proMaxCampaigns}
-                      onChange={e => setProMaxCampaigns(e.target.value)}
-                      required
+                      value={proMaxCampaigns === 999999 ? '' : proMaxCampaigns}
+                      onChange={e => setProMaxCampaigns(e.target.value === '' ? '' : parseInt(e.target.value))}
+                      required={proMaxCampaigns !== 999999}
+                      disabled={proMaxCampaigns === 999999}
+                      placeholder={proMaxCampaigns === 999999 ? 'Unlimited' : ''}
                       min="0"
                     />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Use 999999 for unlimited campaigns.</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Maximum marketing/outreach campaigns creation limit.</span>
                   </div>
 
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Add Quota</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label className="form-label" style={{ margin: 0 }}>Add Quota</label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        <input
+                          type="checkbox"
+                          checked={proQuotaAdd === 999999}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setProQuotaAdd(999999);
+                            } else {
+                              setProQuotaAdd(5);
+                            }
+                          }}
+                          style={{ width: '14px', height: '14px', accentColor: 'var(--accent-primary)', margin: 0 }}
+                        />
+                        Unlimited
+                      </label>
+                    </div>
                     <input
                       type="number"
                       className="form-control"
-                      value={proQuotaAdd}
-                      onChange={e => setProQuotaAdd(e.target.value)}
-                      required
+                      value={proQuotaAdd === 999999 ? '' : proQuotaAdd}
+                      onChange={e => setProQuotaAdd(e.target.value === '' ? '' : parseInt(e.target.value))}
+                      required={proQuotaAdd !== 999999}
+                      disabled={proQuotaAdd === 999999}
+                      placeholder={proQuotaAdd === 999999 ? 'Unlimited' : ''}
                       min="0"
                     />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Use 999999 for unlimited.</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Maximum new campaigns allowed to create.</span>
                   </div>
 
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Edit Quota</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label className="form-label" style={{ margin: 0 }}>Edit Quota</label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        <input
+                          type="checkbox"
+                          checked={proQuotaEdit === 999999}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setProQuotaEdit(999999);
+                            } else {
+                              setProQuotaEdit(10);
+                            }
+                          }}
+                          style={{ width: '14px', height: '14px', accentColor: 'var(--accent-primary)', margin: 0 }}
+                        />
+                        Unlimited
+                      </label>
+                    </div>
                     <input
                       type="number"
                       className="form-control"
-                      value={proQuotaEdit}
-                      onChange={e => setProQuotaEdit(e.target.value)}
-                      required
+                      value={proQuotaEdit === 999999 ? '' : proQuotaEdit}
+                      onChange={e => setProQuotaEdit(e.target.value === '' ? '' : parseInt(e.target.value))}
+                      required={proQuotaEdit !== 999999}
+                      disabled={proQuotaEdit === 999999}
+                      placeholder={proQuotaEdit === 999999 ? 'Unlimited' : ''}
                       min="0"
                     />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Use 999999 for unlimited.</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Maximum campaign detail views allowed.</span>
                   </div>
 
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Delete Quota</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label className="form-label" style={{ margin: 0 }}>Delete Quota</label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        <input
+                          type="checkbox"
+                          checked={proQuotaDelete === 999999}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setProQuotaDelete(999999);
+                            } else {
+                              setProQuotaDelete(5);
+                            }
+                          }}
+                          style={{ width: '14px', height: '14px', accentColor: 'var(--accent-primary)', margin: 0 }}
+                        />
+                        Unlimited
+                      </label>
+                    </div>
                     <input
                       type="number"
                       className="form-control"
-                      value={proQuotaDelete}
-                      onChange={e => setProQuotaDelete(e.target.value)}
-                      required
+                      value={proQuotaDelete === 999999 ? '' : proQuotaDelete}
+                      onChange={e => setProQuotaDelete(e.target.value === '' ? '' : parseInt(e.target.value))}
+                      required={proQuotaDelete !== 999999}
+                      disabled={proQuotaDelete === 999999}
+                      placeholder={proQuotaDelete === 999999 ? 'Unlimited' : ''}
                       min="0"
                     />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Use 999999 for unlimited.</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Maximum campaign deletions allowed.</span>
                   </div>
 
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Save Changes Quota</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label className="form-label" style={{ margin: 0 }}>Save Changes Quota</label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                        <input
+                          type="checkbox"
+                          checked={proQuotaSave === 999999}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setProQuotaSave(999999);
+                            } else {
+                              setProQuotaSave(10);
+                            }
+                          }}
+                          style={{ width: '14px', height: '14px', accentColor: 'var(--accent-primary)', margin: 0 }}
+                        />
+                        Unlimited
+                      </label>
+                    </div>
                     <input
                       type="number"
                       className="form-control"
-                      value={proQuotaSave}
-                      onChange={e => setProQuotaSave(e.target.value)}
-                      required
+                      value={proQuotaSave === 999999 ? '' : proQuotaSave}
+                      onChange={e => setProQuotaSave(e.target.value === '' ? '' : parseInt(e.target.value))}
+                      required={proQuotaSave !== 999999}
+                      disabled={proQuotaSave === 999999}
+                      placeholder={proQuotaSave === 999999 ? 'Unlimited' : ''}
                       min="0"
                     />
-                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Use 999999 for unlimited.</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>Maximum times changes can be saved.</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            <button type="submit" className="btn btn-primary" style={{ minWidth: '160px' }} disabled={savingSettings}>
-              {savingSettings ? 'Saving Settings...' : 'Save Settings'}
-            </button>
+            <div style={{
+              position: 'sticky',
+              bottom: '0',
+              background: 'var(--bg-page)',
+              padding: '16px 0',
+              borderTop: '1px solid var(--border-card)',
+              zIndex: 10,
+              display: 'flex',
+              justifyContent: 'flex-start',
+              marginTop: '28px'
+            }}>
+              <button type="submit" className="btn btn-primary" style={{ minWidth: '160px' }} disabled={savingSettings}>
+                {savingSettings ? 'Saving Settings...' : 'Save Settings'}
+              </button>
+            </div>
           </form>
         </div>
       )}
@@ -935,8 +1110,8 @@ export default function AdminDashboard() {
                         {/* Type Icon Circle */}
                         <div style={{
                           width: '40px', height: '40px', borderRadius: '10px',
-                          background: isEmail ? 'rgba(59, 130, 246, 0.08)' : 'rgba(34, 197, 94, 0.08)',
-                          color: isEmail ? '#3b82f6' : '#22c55e',
+                          background: isEmail ? 'color-mix(in srgb, var(--accent-primary) 8%, transparent)' : 'color-mix(in srgb, var(--stat-delivered) 8%, transparent)',
+                          color: isEmail ? 'var(--accent-primary)' : 'var(--stat-delivered)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           flexShrink: 0, padding: '10px'
                         }}>
@@ -961,23 +1136,60 @@ export default function AdminDashboard() {
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '0.78rem', gap: '4px' }} onClick={() => handleEditContact(c)}>
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => handleEditContact(c)}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: '0.78rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            borderColor: 'transparent',
+                            background: 'transparent',
+                            cursor: 'pointer'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'var(--surface-hover)';
+                            e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.borderColor = 'transparent';
+                          }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                             <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                           </svg>
                           Edit
                         </button>
                         <button
-                          type="button"
                           className="btn btn-secondary"
-                          style={{ padding: '6px 8px', fontSize: '0.78rem', color: 'var(--error)', borderColor: 'rgba(220,38,38,0.15)', background: 'transparent' }}
-                          onClick={() => setConfirmContactDeleteId(c.id)}
-                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--error-glow)'}
-                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setConfirmContactDeleteId(c.id);
+                          }}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: '0.78rem',
+                            color: 'var(--error)',
+                            borderColor: 'transparent',
+                            background: 'transparent',
+                            cursor: 'pointer'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)';
+                            e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.2)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'transparent';
+                            e.currentTarget.style.borderColor = 'transparent';
+                          }}
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                             <polyline points="3 6 5 6 21 6"></polyline>
                             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                           </svg>
@@ -988,6 +1200,53 @@ export default function AdminDashboard() {
                 })}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation User Update Modal */}
+      {pendingUserUpdate && (
+        <div className="modal-backdrop">
+          <div className="modal-box" style={{ maxWidth: '440px' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Confirm Change</h3>
+              <button className="modal-close" onClick={() => setPendingUserUpdate(null)}>&times;</button>
+            </div>
+            <div className="modal-body" style={{ textAlign: 'center', padding: '30px 24px' }}>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: 'rgba(99, 102, 241, 0.08)',
+                color: 'var(--accent-primary)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '18px'
+              }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </div>
+              <p style={{ marginBottom: '14px', fontSize: '1rem', fontWeight: 700, color: 'var(--foreground)' }}>
+                Confirm User Update
+              </p>
+              <p style={{ marginBottom: '24px', fontSize: '0.85rem', color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
+                Are you sure you want to change the <strong>{pendingUserUpdate.field}</strong> of <strong>{pendingUserUpdate.email}</strong> to <strong>{pendingUserUpdate.value}</strong>?
+              </p>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button className="btn btn-secondary" onClick={() => setPendingUserUpdate(null)}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary" onClick={() => {
+                  handleUpdateUser(pendingUserUpdate.userId, pendingUserUpdate.payload);
+                  setPendingUserUpdate(null);
+                }}>
+                  Confirm Change
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

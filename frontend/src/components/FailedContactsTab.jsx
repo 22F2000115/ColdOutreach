@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '../App';
 
 export default function FailedContactsTab({ campaignId, recipients, onRefresh, isEditable, setActiveTab }) {
@@ -12,6 +12,11 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
   const [uploadingCsv, setUploadingCsv] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const [actionLoad, setActionLoad] = useState(false);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
 
   // Filter only failed contacts
   const failedContacts = recipients.filter(r => r.status === 'failed');
@@ -176,6 +181,17 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
     }
   };
 
+  useEffect(() => {
+    const maxPage = Math.ceil(filteredContacts.length / pageSize);
+    if (maxPage > 0 && currentPage > maxPage) {
+      setCurrentPage(maxPage);
+    }
+  }, [filteredContacts.length, currentPage]);
+
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedContacts = filteredContacts.slice(startIndex, startIndex + pageSize);
+  const totalPages = Math.ceil(filteredContacts.length / pageSize);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {message.text && (
@@ -289,7 +305,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                   No failed recipients match this filter.
                 </td>
               </tr>
-            ) : filteredContacts.map((r) => (
+            ) : paginatedContacts.map((r) => (
               <tr key={r.id} className="outreach-log-row status-failed">
                 <td style={{ textAlign: 'center' }}>
                   <input 
@@ -305,18 +321,37 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                 </td>
                 <td style={{ color: 'var(--muted-foreground)', fontSize: '0.82rem' }}>
                   {r.sent_at ? new Date(r.sent_at).toLocaleString() : '—'}
-                </td>
+                                </td>
                 {isEditable && (
                   <td style={{ textAlign: 'center' }}>
                     <button
                       type="button"
-                      className="btn-trash"
-                      title="Remove contact"
-                      onClick={() => handleDeleteRecipient(r.id)}
+                      className="btn btn-secondary"
                       disabled={actionLoad}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--error)', padding: '6px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
-                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--error-glow)'}
-                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDeleteRecipient(r.id);
+                      }}
+                      style={{
+                        padding: '6px 10px',
+                        fontSize: '0.78rem',
+                        color: 'var(--error)',
+                        borderColor: 'transparent',
+                        background: 'transparent',
+                        cursor: actionLoad ? 'not-allowed' : 'pointer',
+                        opacity: actionLoad ? 0.5 : 1
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!actionLoad) {
+                          e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)';
+                          e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.2)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.borderColor = 'transparent';
+                      }}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="3 6 5 6 21 6"></polyline>
@@ -330,6 +365,35 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
           </tbody>
         </table>
       </div>
+
+      {/* Pagination controls */}
+      {filteredContacts.length > pageSize && (
+        <div className="flex-between" style={{ padding: '16px 20px', borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--muted-foreground)', fontWeight: 600 }}>
+            Showing {startIndex + 1} to {Math.min(startIndex + pageSize, filteredContacts.length)} of {filteredContacts.length} failed contacts
+          </span>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Re-upload Corrected CSV Panel */}
       {isEditable && (
@@ -381,8 +445,8 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
               <div>
                 <label className="form-label" style={{ marginBottom: '4px', display: 'block' }}>Import Mode</label>
-                <div className="radio-group" style={{ margin: 0 }}>
-                  <label className="radio-option">
+                <div className="radio-group" style={{ display: 'flex', gap: '20px', margin: '8px 0' }}>
+                  <label className="radio-option" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
                     <input
                       type="radio"
                       name="correctedCsvMode"
@@ -390,10 +454,11 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                       checked={csvMode === 'append'}
                       onChange={() => setCsvMode('append')}
                       disabled={uploadingCsv}
+                      style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }}
                     />
                     Append (keeps existing log, adds corrected ones)
                   </label>
-                  <label className="radio-option" style={{ marginLeft: '16px' }}>
+                  <label className="radio-option" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
                     <input
                       type="radio"
                       name="correctedCsvMode"
@@ -401,8 +466,12 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                       checked={csvMode === 'replace'}
                       onChange={() => setCsvMode('replace')}
                       disabled={uploadingCsv}
+                      style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }}
                     />
-                    Replace (wipes all existing contacts/log and replaces list)
+                    Replace list
+                    <span style={{ fontSize: '0.74rem', color: '#F59E0B', fontWeight: 500, marginLeft: '6px' }}>
+                      — This will replace your existing contacts
+                    </span>
                   </label>
                 </div>
               </div>

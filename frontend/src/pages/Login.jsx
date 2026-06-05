@@ -61,6 +61,32 @@ export default function Login() {
           backgroundSize: '24px 24px'
         }} />
 
+        {/* Soft abstract glowing shapes */}
+        <div style={{
+          position: 'absolute',
+          top: '15%',
+          right: '-10%',
+          width: '280px',
+          height: '280px',
+          borderRadius: '50%',
+          background: 'var(--accent-primary)',
+          opacity: 0.22,
+          filter: 'blur(80px)',
+          pointerEvents: 'none'
+        }} />
+        <div style={{
+          position: 'absolute',
+          bottom: '10%',
+          left: '-5%',
+          width: '240px',
+          height: '240px',
+          borderRadius: '50%',
+          background: 'var(--stat-enqueued)',
+          opacity: 0.16,
+          filter: 'blur(60px)',
+          pointerEvents: 'none'
+        }} />
+
         {/* Brand Header */}
         <div style={{ zIndex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
           <img 
@@ -126,14 +152,14 @@ export default function Login() {
         </div>
 
         <div style={{ maxWidth: '400px', width: '100%', animation: 'scaleIn 0.3s var(--ease-spring)' }}>
-          {/* Logo header - always visible */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+          {/* Brand header on Mobile only */}
+          <div className="mobile-only-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
             <img 
               src={theme === 'dark' ? logoDark : logoLight} 
               alt="ColdOutreach Logo" 
               style={{ height: '64px', width: 'auto', display: 'block', objectFit: 'contain' }} 
             />
-            <div style={{ fontFamily: 'var(--font-header)', fontSize: '2.2rem', fontWeight: 900, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ fontFamily: 'var(--font-header)', fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'var(--logo-dark)' }}>Outreach</span>
             </div>
             <p style={{ color: 'var(--muted-foreground)', fontSize: '0.88rem', margin: 0 }}>
@@ -142,7 +168,7 @@ export default function Login() {
           </div>
 
           {/* Card */}
-          <div className={`card ${animateShake ? 'shake' : ''}`} style={{ padding: '38px', border: '1px solid var(--border-glass)', background: 'var(--card)' }}>
+          <div className={`card ${animateShake ? 'shake' : ''}`} style={{ padding: '38px', border: '1px solid var(--border-card)', background: 'var(--card)', boxShadow: 'none' }}>
             <h1 style={{ fontFamily: 'var(--font-header)', fontSize: '1.45rem', fontWeight: 800, marginBottom: '24px', textAlign: 'center' }}>
               Welcome back
             </h1>
@@ -205,6 +231,13 @@ export default function Login() {
           </div>
         </div>
       </div>
+
+      {/* CSS style block for mobile view headers */}
+      <style>{`
+        @media (min-width: 901px) {
+          .mobile-only-header { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 }

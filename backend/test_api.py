@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database import SessionLocal
-from models import User, Campaign, Recipient
+from models import User, Campaign, Recipient, PlanQuota
 from main import app
 import worker
 
@@ -24,8 +24,33 @@ client = TestClient(app)
 def run_tests():
     print("Starting programatic API tests...")
     
-    # 1. Clean up any previous test user
+    # 1. Clean up any previous test user and reset global plan limits
     db = SessionLocal()
+    trial_quota = db.query(PlanQuota).filter(PlanQuota.plan == "trial").first()
+    if trial_quota:
+        trial_quota.max_smtp_accounts = 1
+        trial_quota.max_campaigns = 3
+        trial_quota.add_limit = 3
+        trial_quota.edit_limit = 5
+        trial_quota.delete_limit = 3
+        trial_quota.save_limit = 5
+    pro_quota = db.query(PlanQuota).filter(PlanQuota.plan == "pro").first()
+    if pro_quota:
+        pro_quota.max_smtp_accounts = 3
+        pro_quota.max_campaigns = 999999
+        pro_quota.add_limit = 999999
+        pro_quota.edit_limit = 999999
+        pro_quota.delete_limit = 999999
+        pro_quota.save_limit = 999999
+    db.commit()
+
+    # Sync global limits in-memory in main app
+    from main import PLAN_LIMITS
+    PLAN_LIMITS["trial"]["max_smtp_accounts"] = 1
+    PLAN_LIMITS["trial"]["max_campaigns"] = 3
+    PLAN_LIMITS["pro"]["max_smtp_accounts"] = 3
+    PLAN_LIMITS["pro"]["max_campaigns"] = 999999
+
     test_email = "test_api_user@example.com"
     existing = db.query(User).filter(User.email == test_email).first()
     if existing:

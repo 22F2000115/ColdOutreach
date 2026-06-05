@@ -16,6 +16,9 @@ A self-hosted cold email campaign platform. Upload contacts as CSV, write person
 - Dark / Light mode toggle
 - Admin Panel — manage all users, campaigns, and global plan limits
 - SQLite database — zero external database setup required
+- Rate Limiting — built-in rate limits to protect endpoints
+- Thread-safe Concurrency — database and user-level locking prevent limit check bypasses under fast parallel requests
+- Input Validation — strict registration validations and file size constraints on uploads
 
 ---
 
@@ -24,7 +27,7 @@ A self-hosted cold email campaign platform. Upload contacts as CSV, write person
 ```
 ColdOutreach/
 ├── backend/
-│   ├── main.py              # Core app, all routes, middleware
+│   ├── main.py              # Core app, all routes, middleware, rate limiting
 │   ├── models.py            # SQLAlchemy database models
 │   ├── auth.py              # JWT creation & verification
 │   ├── config.py            # Plan limits configuration
@@ -95,7 +98,7 @@ The script runs through five steps automatically:
 
 At the end it offers to launch the app immediately.
 
-> Re-running `setup.bat` on an existing installation is safe. It skips steps that are already complete and applies any new migrations or packages.
+Note: Re-running `setup.bat` on an existing installation is safe. It skips steps that are already complete and applies any new migrations or packages.
 
 ---
 
@@ -125,7 +128,7 @@ For multiple admins, separate them with commas:
 ADMIN_ACCOUNTS=admin@yourapp.com:Password123,boss@yourapp.com:AnotherPass456
 ```
 
-> Never commit `backend/.env` to version control. It is already listed in `.gitignore`.
+Note: Never commit `backend/.env` to version control. It is already listed in `.gitignore`.
 
 ---
 
@@ -182,6 +185,10 @@ npm run dev
 
 Go to http://localhost:5173, click **Register**, and enter your email and password.
 
+Note the following validation requirements during registration:
+- **Email format:** Must conform to standard email regex syntax (e.g., example@domain.com).
+- **Password strength:** Must be at least 8 characters long.
+
 New accounts start on the Trial plan (3 campaigns, 1 SMTP account).
 
 ### 2. Add an SMTP sender
@@ -214,7 +221,7 @@ Go to **Campaigns** > **New Campaign** and fill in:
 
 ### 4. CSV contact format
 
-Your CSV must have at minimum an `email` column. Any extra columns become placeholders automatically:
+Your CSV must have at minimum an `email` column. Any extra columns become placeholders automatically. Note that CSV file uploads are strictly limited to a maximum size of **6 MB**.
 
 ```csv
 email,company,first_name
@@ -246,7 +253,7 @@ The app sends emails in the background with a delay between each send to avoid s
 
 Open a campaign, scroll to **Bounce Sync**, and click **Sync Bounces**.
 
-The app connects to your inbox via IMAP, scans for bounce notifications, and automatically marks those recipients as failed.
+The app connects to your inbox via IMAP, scans for bounce notifications, and automatically marks those recipients as failed. Bounces are synchronized in a single transaction and filtered by date to optimize performance.
 
 ---
 
@@ -273,7 +280,7 @@ The first admin account is defined in `backend/.env` and created automatically t
 
 From the **Users** tab, find the user and change their role dropdown from User to Admin. No restart required.
 
-> Admins cannot delete or demote their own account from the panel. Admin accounts are exempt from trial expiry checks.
+Note: Admins cannot delete or demote their own account from the panel. Admin accounts are exempt from trial expiry checks.
 
 ---
 
@@ -289,13 +296,16 @@ Admins can change any user's plan instantly from the Admin Panel, or adjust the 
 
 ---
 
-## Security
+## Security & Robustness
 
-- SMTP passwords are encrypted at rest using Fernet symmetric encryption (`ENCRYPTION_KEY`).
-- User sessions use JWT access tokens (1-hour expiry) with HTTP-only refresh token cookies (7-day rotation).
-- Plan limits and account suspension are enforced server-side on every request.
-- Admin routes are protected by a dedicated `get_current_admin_user` FastAPI dependency.
-- The SQLite database (`backend/database.db`) stays entirely local on your machine.
+- **SMTP Password Encryption:** SMTP passwords are encrypted at rest using Fernet symmetric encryption (`ENCRYPTION_KEY`).
+- **Session Security:** User sessions use JWT access tokens (1-hour expiry) with HTTP-only refresh token cookies (7-day rotation).
+- **Concurrency Locks:** Module-level atomic thread-locks per user prevent concurrent creation attempts from bypassing SMTP account or Campaign limits.
+- **Worker Isolation:** The background runner checks and sets Campaign row locks (`is_being_processed`) directly in the database to ensure multiple worker processes do not execute the same campaign simultaneously.
+- **Rate Limiting:** Protects the registration endpoint (limit: 5/minute) and login endpoint (limit: 10/minute) using `slowapi`.
+- **Upload Restrictions:** Imposes a strict 6 MB file limit constraint on CSV contact uploads.
+- **Admin Security:** Admin routes are protected by a dedicated `get_current_admin_user` FastAPI dependency.
+- **Local Data Storage:** The SQLite database (`backend/database.db`) stays entirely local on your machine.
 
 ---
 
@@ -341,7 +351,7 @@ From inside the `backend/` folder with the virtual environment active:
 python test_api.py
 ```
 
-This runs the full test suite covering registration, login, SMTP limits, campaign limits, trial expiry, token refresh, account suspension, and all admin endpoints.
+This runs the full programmatic test suite covering registration, login, SMTP limits, campaign limits, trial expiry, token refresh, account suspension, and all admin endpoints.
 
 ---
 

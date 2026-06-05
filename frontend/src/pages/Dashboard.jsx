@@ -35,6 +35,7 @@ export default function Dashboard() {
   const [campaigns, setCampaigns] = useState([]);
   const [senders,   setSenders]   = useState([]);
   const [loading,   setLoading]   = useState(true);
+  const [activeKebabId, setActiveKebabId] = useState(null);
 
   const [showModal, setShowModal]   = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -49,7 +50,7 @@ export default function Dashboard() {
   const [error,     setError]       = useState('');
 
   const userPlan = user?.plan || 'trial';
-  const campaignLimit = PLAN_LIMITS[userPlan].max_campaigns;
+  const campaignLimit = user?.limits?.max_campaigns ?? PLAN_LIMITS[userPlan].max_campaigns;
   const isAtCampaignLimit = campaigns.length >= campaignLimit;
 
   const isAdmin = user?.role === 'admin';
@@ -80,6 +81,7 @@ export default function Dashboard() {
       const list = sendRes.data || [];
       setSenders(list);
       if (list.length > 0 && !selectedSenderId) setSelectedSenderId(list[0].id);
+      await refreshUser();
     } catch (e) {
       console.error(e);
     } finally {
@@ -92,7 +94,14 @@ export default function Dashboard() {
     const t = setInterval(async () => {
       try { const r = await api.get('/api/campaigns'); setCampaigns(r.data || []); } catch {}
     }, 5000);
-    return () => clearInterval(t);
+
+    const handleOutsideClick = () => setActiveKebabId(null);
+    document.addEventListener('click', handleOutsideClick);
+
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('click', handleOutsideClick);
+    };
   }, []);
 
   const resetModal = () => {
@@ -178,7 +187,7 @@ export default function Dashboard() {
           className="btn btn-primary"
           onClick={handleOpenCreateModal}
           disabled={isAddQuotaReached || isAtCampaignLimit}
-          style={{ transition: 'all 0.3s', opacity: (isAddQuotaReached || isAtCampaignLimit) ? 0.6 : 1, cursor: (isAddQuotaReached || isAtCampaignLimit) ? 'not-allowed' : 'pointer' }}
+          style={{ transition: 'all 0.3s', opacity: (isAddQuotaReached || isAtCampaignLimit) ? 0.6 : 1, cursor: (isAddQuotaReached || isAtCampaignLimit) ? 'not-allowed' : 'pointer', boxShadow: (isAddQuotaReached || isAtCampaignLimit) ? 'none' : '0 4px 12px rgba(99, 102, 241, 0.3)', fontWeight: 800 }}
           onMouseEnter={(e) => {
             const icon = e.currentTarget.querySelector('.plus-icon');
             if (icon && !(isAddQuotaReached || isAtCampaignLimit)) icon.style.transform = 'rotate(90deg)';
@@ -232,8 +241,7 @@ export default function Dashboard() {
           { 
             label: 'Total Campaigns', 
             value: campaigns.length, 
-            color: 'var(--primary)',
-            bg: 'var(--bg-glass, rgba(99, 102, 241, 0.03))',
+            color: 'var(--stat-total)',
             icon: (
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
@@ -246,8 +254,7 @@ export default function Dashboard() {
           { 
             label: 'Emails Enqueued', 
             value: totalEmails,       
-            color: 'var(--info)',
-            bg: 'var(--bg-glass, rgba(14, 165, 233, 0.03))',
+            color: 'var(--stat-enqueued)',
             icon: (
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
@@ -258,8 +265,7 @@ export default function Dashboard() {
           { 
             label: 'Delivered',        
             value: totalSent,          
-            color: 'var(--success)',
-            bg: 'var(--bg-glass, rgba(22, 163, 74, 0.03))',
+            color: 'var(--stat-delivered)',
             icon: (
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
@@ -270,8 +276,7 @@ export default function Dashboard() {
           { 
             label: 'Failures',          
             value: totalFailed,        
-            color: 'var(--error)',
-            bg: 'var(--bg-glass, rgba(220, 38, 38, 0.03))',
+            color: 'var(--stat-failures)',
             icon: (
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -280,13 +285,24 @@ export default function Dashboard() {
               </svg>
             )
           },
-        ].map(({ label, value, color, bg, icon }) => (
-          <div className="metric-card" key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: bg, borderLeft: `4px solid ${color}` }}>
+        ].map(({ label, value, color, icon }) => (
+          <div 
+            className="metric-card" 
+            key={label} 
+            style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              background: `color-mix(in srgb, ${color} 8%, var(--bg-card))`, 
+              border: 'none', 
+              boxShadow: 'var(--shadow-sm)' 
+            }}
+          >
             <div>
               <div className="metric-label">{label}</div>
               <div className="metric-value" style={{ color }}>{value}</div>
             </div>
-            <div style={{ color, opacity: 0.8 }}>
+            <div style={{ color, opacity: 0.85 }}>
               {icon}
             </div>
           </div>
@@ -307,7 +323,7 @@ export default function Dashboard() {
       {loading ? (
         <p style={{ color: 'var(--muted-foreground)' }}>Loading…</p>
       ) : campaigns.length === 0 ? (
-        <div className="glass-panel empty-state" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 40px', gap: '12px' }}>
+        <div className="card empty-state" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 40px', gap: '12px', boxShadow: 'none', border: '1px solid var(--border-card)' }}>
           <div className="empty-state-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '80px', height: '80px', borderRadius: '50%', background: 'var(--surface-hover)', color: 'var(--primary)', marginBottom: '8px' }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 2L11 13"></path>
@@ -315,7 +331,7 @@ export default function Dashboard() {
             </svg>
           </div>
           <h3 style={{ fontFamily: 'var(--font-header)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--foreground)' }}>No campaigns yet</h3>
-          <p style={{ fontSize: '0.9rem', color: 'var(--muted-foreground)', maxWidth: '340px', margin: '0 auto 12px', lineHeight: '1.5' }}>Create your first campaign, configure SMTP settings, import contacts, and send emails.</p>
+          <p style={{ fontSize: '0.9rem', color: 'var(--muted-foreground)', maxWidth: '340px', margin: '0 auto 12px', lineHeight: '1.5' }}>Create your first one to start outreach campaigns, import contacts, and send emails.</p>
           <button
             className="btn btn-primary"
             style={{
@@ -328,7 +344,7 @@ export default function Dashboard() {
             onClick={handleOpenCreateModal}
             disabled={isAddQuotaReached}
           >
-            Create Campaign
+            + New Campaign
           </button>
         </div>
       ) : (
@@ -386,7 +402,7 @@ export default function Dashboard() {
                     <span>{c.stats.sent}/{c.stats.total} sent</span>
                     <span style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{pct}%</span>
                   </div>
-                  <div className="progress-bar-track" style={{ height: '8px' }}>
+                  <div className="progress-bar-track" style={{ height: '4px' }}>
                     <div className={`progress-bar-fill${c.status === 'running' ? ' shimmer' : ''}`} style={{ width: `${pct}%` }} />
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '6px' }}>
@@ -404,8 +420,9 @@ export default function Dashboard() {
                   {(c.status === 'draft' || c.status === 'paused' || c.status === 'failed') && (
                     <button
                       className="btn btn-primary"
-                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', gap: '4px' }}
+                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', gap: '6px' }}
                       onClick={(e) => handleAction(c.id, 'start', e)}
+                      disabled={isEditQuotaReached}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                         <polygon points="5 3 19 12 5 21 5 3"></polygon>
@@ -416,8 +433,8 @@ export default function Dashboard() {
 
                   {c.status === 'running' && (
                     <button
-                      className="btn btn-secondary"
-                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', gap: '4px' }}
+                      className="btn btn-primary"
+                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', gap: '6px' }}
                       onClick={(e) => handleAction(c.id, 'pause', e)}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -430,8 +447,12 @@ export default function Dashboard() {
                   {isEditQuotaReached ? (
                     <button 
                       className="btn btn-secondary" 
-                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px', opacity: 0.6, cursor: 'not-allowed' }}
-                      onClick={() => alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.")}
+                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: 0.6, cursor: 'not-allowed' }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
+                      }}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -440,7 +461,7 @@ export default function Dashboard() {
                       Edit
                     </button>
                   ) : (
-                    <Link to={`/campaigns/${c.id}`} className="btn btn-secondary" style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                    <Link to={`/campaigns/${c.id}`} className="btn btn-secondary" style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                         <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
@@ -448,15 +469,34 @@ export default function Dashboard() {
                       Edit
                     </Link>
                   )}
+                  
                   <button
                     className="btn btn-secondary"
-                    style={{ padding: '9px 10px', fontSize: '0.88rem', height: '38px', color: isDeleteQuotaReached ? 'var(--muted-foreground)' : 'var(--error)', borderColor: isDeleteQuotaReached ? 'var(--border-subtle)' : 'rgba(220,38,38,0.15)', background: 'transparent', opacity: isDeleteQuotaReached ? 0.6 : 1, cursor: isDeleteQuotaReached ? 'not-allowed' : 'pointer' }}
                     onClick={(e) => handleDelete(c.id, e)}
                     disabled={isDeleteQuotaReached}
-                    onMouseEnter={(e) => { if (!isDeleteQuotaReached) e.currentTarget.style.backgroundColor = 'var(--error-glow)' }}
-                    onMouseLeave={(e) => { if (!isDeleteQuotaReached) e.currentTarget.style.backgroundColor = 'transparent' }}
+                    style={{
+                      padding: '9px 12px',
+                      fontSize: '0.88rem',
+                      height: '38px',
+                      color: 'var(--error)',
+                      borderColor: 'transparent',
+                      background: 'transparent',
+                      cursor: isDeleteQuotaReached ? 'not-allowed' : 'pointer'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isDeleteQuotaReached) {
+                        e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)';
+                        e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.2)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isDeleteQuotaReached) {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.borderColor = 'transparent';
+                      }
+                    }}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="3 6 5 6 21 6"></polyline>
                       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                     </svg>

@@ -9,9 +9,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     plan = Column(String, default="trial", nullable=False)
-    trial_expires_at = Column(DateTime, default=lambda: datetime.datetime.utcnow() + datetime.timedelta(days=30), nullable=True)
+    trial_expires_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=30), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     role = Column(String, default="user", nullable=False)
     campaign_add_count = Column(Integer, default=0, nullable=False)
@@ -53,7 +53,8 @@ class Campaign(Base):
     attachment_name = Column(String, nullable=True)  # filename of attachment
     attachment_display_name = Column(String, nullable=True)  # custom filename shown to recipient
     scheduled_send_at = Column(DateTime, nullable=True)  # 10-minute delay send time
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
+    is_being_processed = Column(Boolean, default=False, nullable=False, server_default="0")
 
     # Relationships
     user = relationship("User", back_populates="campaigns")
@@ -99,4 +100,7 @@ class PlanQuota(Base):
     edit_limit = Column(Integer, default=999999, nullable=False)
     delete_limit = Column(Integer, default=999999, nullable=False)
     save_limit = Column(Integer, default=999999, nullable=False)
+    max_smtp_accounts = Column(Integer, default=1, nullable=False)
+    max_campaigns = Column(Integer, default=3, nullable=False)
+
 

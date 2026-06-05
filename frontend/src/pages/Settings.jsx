@@ -4,7 +4,7 @@ import { api, useAuth } from '../App';
 import { PLAN_LIMITS } from '../config';
 
 export default function Settings() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [senders,   setSenders]   = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [editingId, setEditingId] = useState(null);
@@ -17,14 +17,16 @@ export default function Settings() {
   const [testing,   setTesting]   = useState(false);
   const [message,   setMessage]   = useState({ text: '', type: '' });
   const [testResult, setTestResult] = useState(null);
+  const [showTrialBanner, setShowTrialBanner] = useState(true);
 
-  const limit = PLAN_LIMITS[user?.plan || 'trial'].max_smtp_accounts;
+  const limit = user?.limits?.max_smtp_accounts ?? PLAN_LIMITS[user?.plan || 'trial'].max_smtp_accounts;
   const isAtLimit = senders.length >= limit && !editingId;
 
   const fetchSenders = async () => {
     try {
       const res = await api.get('/api/settings/smtp');
       setSenders(res.data || []);
+      await refreshUser();
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -190,8 +192,8 @@ export default function Settings() {
       </div>
 
       {/* Trial expiry banner */}
-      {user?.plan === 'trial' && user?.trial_expires_at && (
-        <div className="alert alert-info" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {user?.plan === 'trial' && user?.trial_expires_at && showTrialBanner && (
+        <div className="alert alert-warning" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <circle cx="12" cy="12" r="10"></circle>
@@ -200,7 +202,18 @@ export default function Settings() {
             </svg>
             <span>You are on the <strong>Trial Plan</strong>. Your trial expires on <strong>{new Date(user.trial_expires_at).toLocaleDateString()}</strong>.</span>
           </div>
-          <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.82rem', height: '30px' }} onClick={() => alert('Subscription/upgrade features coming soon!')}>Upgrade to Pro</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.82rem', height: '30px' }} onClick={() => alert('Subscription/upgrade features coming soon!')}>Upgrade to Pro</button>
+            <button 
+              onClick={() => setShowTrialBanner(false)} 
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '4px', display: 'flex', alignItems: 'center', opacity: 0.7 }}
+              title="Dismiss"
+              onMouseEnter={e => e.currentTarget.style.opacity = 1}
+              onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
         </div>
       )}
 
@@ -272,24 +285,7 @@ export default function Settings() {
               </div>
             </details>
 
-            {isAtLimit && (
-              <div style={{ background: 'var(--primary-subtle, rgba(99,102,241,0.08))', border: '1px solid var(--primary-border, rgba(99,102,241,0.2))', borderRadius: '8px', padding: '10px 14px', fontSize: '0.8rem', color: 'var(--muted-foreground)', marginBottom: '16px' }}>
-                SMTP account limit reached ({limit} allowed on {user?.plan} plan). Please upgrade to add more.
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-              <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={saving || testing || isAtLimit}>
-                {saving ? 'Saving…' : editingId ? 'Update Sender' : 'Add Sender'}
-              </button>
-              {editingId && (
-                <button type="button" className="btn btn-secondary" onClick={resetForm} disabled={saving || testing}>
-                  Cancel
-                </button>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
               <button type="button" className="btn btn-secondary" style={{ flexGrow: 1 }} onClick={handleTest} disabled={saving || testing || !username || !password}>
                 {testing ? 'Testing…' : 'Test Connection'}
               </button>
@@ -309,16 +305,37 @@ export default function Settings() {
                 </span>
               )}
             </div>
+
+            <div 
+              style={{ display: 'flex', gap: '8px', width: '100%' }}
+              title={isAtLimit ? "Limit reached — upgrade to add more senders." : ""}
+            >
+              <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={saving || testing || isAtLimit}>
+                {saving ? 'Saving…' : editingId ? 'Update Sender' : 'Add Sender'}
+              </button>
+              {editingId && (
+                <button type="button" className="btn btn-secondary" onClick={resetForm} disabled={saving || testing}>
+                  Cancel
+                </button>
+              )}
+            </div>
           </form>
         </div>
 
-        {/* ── Senders List ── */}
         <div className="card" style={{ padding: '24px' }}>
-          <div className="flex-between" style={{ marginBottom: '20px' }}>
-            <h2 className="section-title">Configured Senders</h2>
-            <span className="badge badge-running" style={{ background: 'var(--surface-hover)', color: 'var(--primary)', borderColor: 'var(--border-subtle)' }}>
-              {senders.length} / {limit} accounts used
-            </span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+            <div className="flex-between" style={{ width: '100%' }}>
+              <h2 className="section-title" style={{ margin: 0 }}>Configured Senders</h2>
+              <span className="badge badge-running" style={{ background: 'var(--surface-hover)', color: 'var(--primary)', borderColor: 'var(--border-subtle)' }}>
+                {senders.length} / {limit} accounts used
+              </span>
+            </div>
+            {isAtLimit && (
+              <div style={{ color: 'var(--error)', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', alignSelf: 'flex-end' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>Limit reached — upgrade to add more senders</span>
+              </div>
+            )}
           </div>
 
           {senders.length === 0 ? (
@@ -371,8 +388,29 @@ export default function Settings() {
                     </div>
 
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <button className="btn btn-secondary" style={{ padding: '6px 10px', fontSize: '0.78rem', gap: '4px' }} onClick={() => handleEdit(s)}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => handleEdit(s)}
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: '0.78rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          borderColor: 'transparent',
+                          background: 'transparent',
+                          cursor: 'pointer'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'var(--surface-hover)';
+                          e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent';
+                          e.currentTarget.style.borderColor = 'transparent';
+                        }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                           <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                         </svg>
@@ -380,12 +418,25 @@ export default function Settings() {
                       </button>
                       <button
                         className="btn btn-secondary"
-                        style={{ padding: '6px 8px', fontSize: '0.78rem', color: 'var(--error)', borderColor: 'rgba(220,38,38,0.15)', background: 'transparent' }}
                         onClick={() => handleDelete(s.id)}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--error-glow)'}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: '0.78rem',
+                          color: 'var(--error)',
+                          borderColor: 'transparent',
+                          background: 'transparent',
+                          cursor: 'pointer'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)';
+                          e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.2)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent';
+                          e.currentTarget.style.borderColor = 'transparent';
+                        }}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                           <polyline points="3 6 5 6 21 6"></polyline>
                           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                         </svg>
@@ -413,7 +464,7 @@ export default function Settings() {
             {
               step: 1,
               title: "2-Factor Auth",
-              desc: <>Enable <strong>2-Factor Authentication</strong> on your Google account settings.</>
+              desc: <>Enable <strong>2-Factor Authentication</strong> on your <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }}>Google Account Security settings</a>.</>
             },
             {
               step: 2,

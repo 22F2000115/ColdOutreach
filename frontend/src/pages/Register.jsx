@@ -77,6 +77,32 @@ export default function Register() {
           backgroundSize: '24px 24px'
         }} />
 
+        {/* Soft abstract glowing shapes */}
+        <div style={{
+          position: 'absolute',
+          top: '15%',
+          right: '-10%',
+          width: '280px',
+          height: '280px',
+          borderRadius: '50%',
+          background: 'var(--accent-primary)',
+          opacity: 0.22,
+          filter: 'blur(80px)',
+          pointerEvents: 'none'
+        }} />
+        <div style={{
+          position: 'absolute',
+          bottom: '10%',
+          left: '-5%',
+          width: '240px',
+          height: '240px',
+          borderRadius: '50%',
+          background: 'var(--stat-enqueued)',
+          opacity: 0.16,
+          filter: 'blur(60px)',
+          pointerEvents: 'none'
+        }} />
+
         {/* Brand Header */}
         <div style={{ zIndex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
           <img 
@@ -158,7 +184,7 @@ export default function Register() {
           </div>
 
           {/* Card */}
-          <div className={`card ${animateShake ? 'shake' : ''}`} style={{ padding: '38px', border: '1px solid var(--border-glass)', background: 'var(--card)' }}>
+          <div className={`card ${animateShake ? 'shake' : ''}`} style={{ padding: '38px', border: '1px solid var(--border-card)', background: 'var(--card)', boxShadow: 'none' }}>
             <h1 style={{ fontFamily: 'var(--font-header)', fontSize: '1.45rem', fontWeight: 800, marginBottom: '24px', textAlign: 'center' }}>
               Create Account
             </h1>

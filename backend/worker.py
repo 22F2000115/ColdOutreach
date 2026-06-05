@@ -9,18 +9,15 @@ from email.mime.text import MIMEText
 from pathlib import Path
 from sqlalchemy.orm import Session
 from database import SessionLocal
-from models import Campaign, Recipient, SMTPSettings
+from models import Campaign, Recipient, SMTPSettings, User
 from security import decrypt_password
 
 logger = logging.getLogger("worker")
 logger.setLevel(logging.INFO)
 
 # Directory where campaign attachments are saved
-UPLOADS_DIR = Path("uploads")
+UPLOADS_DIR = Path(__file__).parent / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
-
-# Track active campaign tasks to prevent double running
-active_campaigns = set()
 
 def get_smtp_connection(host: str, port: int, username: str, password_decrypted: str):
     """Establish and return an authenticated SMTP connection."""
@@ -112,18 +109,35 @@ def build_message(
 
 async def send_campaign_emails(campaign_id: int):
     """Background runner function to process campaign recipients."""
-    if campaign_id in active_campaigns:
-        logger.warning(f"Campaign {campaign_id} is already running.")
-        return
-
-    active_campaigns.add(campaign_id)
     db: Session = SessionLocal()
 
     try:
-        # 1. Fetch Campaign and verify status
-        campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
-        if not campaign or campaign.status != "running":
-            logger.info(f"Campaign {campaign_id} not found or status not running.")
+        # 1. Fetch Campaign and verify status atomically with is_being_processed
+        campaign = db.query(Campaign).filter(
+            Campaign.id == campaign_id,
+            Campaign.status == "running",
+            Campaign.is_being_processed == False
+        ).first()
+        
+        if not campaign:
+            logger.info(f"Campaign {campaign_id} not found, not running, or already being processed by another runner.")
+            return
+
+        campaign.is_being_processed = True
+        db.commit()
+
+        # Fetch and verify Owner status (suspension & trial expiry)
+        owner = db.query(User).filter(User.id == campaign.user_id).first()
+        if not owner or not owner.is_active:
+            campaign.status = "paused"
+            db.commit()
+            logger.warning(f"Campaign {campaign_id} owner is suspended or not found. Pausing campaign.")
+            return
+
+        if owner.plan == "trial" and owner.trial_expires_at and datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) > owner.trial_expires_at:
+            campaign.status = "paused"
+            db.commit()
+            logger.warning(f"Campaign {campaign_id} owner trial has expired. Pausing campaign.")
             return
 
         # 2. Fetch User SMTP Settings
@@ -179,6 +193,19 @@ async def send_campaign_emails(campaign_id: int):
                 logger.info(f"Campaign {campaign_id} status changed to {campaign.status}. Stopping runner.")
                 break
 
+            # Re-verify campaign owner status dynamically (in case of mid-run suspension/expiration)
+            owner = db.query(User).filter(User.id == campaign.user_id).first()
+            if not owner or not owner.is_active:
+                campaign.status = "paused"
+                db.commit()
+                logger.warning(f"Campaign {campaign_id} owner suspended. Pausing runner.")
+                break
+            if owner.plan == "trial" and owner.trial_expires_at and datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) > owner.trial_expires_at:
+                campaign.status = "paused"
+                db.commit()
+                logger.warning(f"Campaign {campaign_id} owner trial has expired. Pausing runner.")
+                break
+
             # Mark recipient as sending
             recipient.status = "sending"
             db.commit()
@@ -230,7 +257,7 @@ async def send_campaign_emails(campaign_id: int):
             if success:
                 recipient.status = "sent"
                 recipient.error_message = None
-                recipient.sent_at = datetime.datetime.utcnow()
+                recipient.sent_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
             else:
                 recipient.status = "failed"
                 recipient.error_message = error_msg
@@ -264,5 +291,12 @@ async def send_campaign_emails(campaign_id: int):
     except Exception as e:
         logger.exception(f"Unhandled error in campaign runner {campaign_id}: {e}")
     finally:
-        active_campaigns.discard(campaign_id)
+        try:
+            # Re-fetch campaign to reset processing status
+            campaign = db.query(Campaign).filter(Campaign.id == campaign_id).first()
+            if campaign:
+                campaign.is_being_processed = False
+                db.commit()
+        except Exception as ex:
+            logger.error(f"Error resetting is_being_processed for campaign {campaign_id}: {ex}")
         db.close()
