@@ -260,6 +260,103 @@ def run_tests():
     )
     assert cancel_res.status_code == 400
     print("Immediate Start Action OK.")
+
+    # 7.5. Test Completed Campaign Safety Guardrails
+    print("Testing Completed Campaign Safety Guardrails...")
+    # Set campaign status to completed in DB
+    db = SessionLocal()
+    camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
+    camp.status = "completed"
+    db.commit()
+    db.close()
+
+    # Test template edit on Completed campaign: should succeed and keep status completed
+    update_res = client.put(
+        f"/api/campaigns/{camp_id}",
+        headers=headers,
+        data={
+            "name": "Updated Completed Campaign",
+            "subject_template": "New Subject {{first_name}}",
+            "body_template": "New Body",
+            "sender_id": sender_id
+        }
+    )
+    assert update_res.status_code == 200
+    
+    db = SessionLocal()
+    camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
+    assert camp.status == "completed"
+    assert camp.name == "Updated Completed Campaign"
+    db.close()
+
+    # Test adding recipient manually: should transition status to paused
+    add_rec_res = client.post(
+        f"/api/campaigns/{camp_id}/recipients",
+        headers=headers,
+        data={
+            "email": "new_recipient@example.com",
+            "company": "Acme Corp"
+        }
+    )
+    assert add_rec_res.status_code == 200
+    
+    db = SessionLocal()
+    camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
+    assert camp.status == "paused"
+    db.close()
+
+    # Set status back to completed
+    db = SessionLocal()
+    camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
+    camp.status = "completed"
+    db.commit()
+    db.close()
+
+    # Test CSV upload with new leads: should transition status to paused
+    csv_content_new = (
+        "email,company,first_name,last_name,role\n"
+        "new_lead_csv@example.com,Microsoft,Satya,Nadella,CEO\n"
+    )
+    csv_file_new = ("new_contacts.csv", csv_content_new, "text/csv")
+    csv_res = client.post(
+        f"/api/campaigns/{camp_id}/recipients/csv",
+        headers=headers,
+        data={"mode": "append"},
+        files={"contacts_csv": csv_file_new}
+    )
+    assert csv_res.status_code == 200
+    
+    db = SessionLocal()
+    camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
+    assert camp.status == "paused"
+    db.close()
+
+    # Set status back to completed
+    db = SessionLocal()
+    camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
+    camp.status = "completed"
+    db.commit()
+    db.close()
+
+    # Test CSV upload with duplicate leads only: should keep status completed
+    csv_content_dup = (
+        "email,company,first_name,last_name,role\n"
+        "new_lead_csv@example.com,Microsoft,Satya,Nadella,CEO\n"
+    )
+    csv_file_dup = ("dup_contacts.csv", csv_content_dup, "text/csv")
+    csv_res_dup = client.post(
+        f"/api/campaigns/{camp_id}/recipients/csv",
+        headers=headers,
+        data={"mode": "append"},
+        files={"contacts_csv": csv_file_dup}
+    )
+    assert csv_res_dup.status_code == 200
+    
+    db = SessionLocal()
+    camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
+    assert camp.status == "completed"
+    db.close()
+    print("Completed Campaign Safety Guardrails OK.")
     
     # 8. Test Trial Expiration check (402)
     print("Testing Trial Expiry (402)...")

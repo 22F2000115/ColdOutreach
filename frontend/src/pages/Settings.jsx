@@ -229,7 +229,7 @@ export default function Settings() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '24px', alignItems: 'start' }}>
+      <div className="settings-grid">
 
         {/* ── Add / Edit Form ── */}
         <div className="card" style={{ padding: '24px' }}>
@@ -251,8 +251,11 @@ export default function Settings() {
             <div className="form-group">
               <label className="form-label">Gmail App Password</label>
               <input type="password" className="form-control" placeholder="16-character app password" value={password} onChange={e => setPassword(e.target.value)} required={!editingId} disabled={!!editingId} style={{ cursor: editingId ? 'not-allowed' : 'text', opacity: editingId ? 0.75 : 1 }} autoComplete="new-password" />
-              <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)' }}>
-                Use an App Password — not your account password. <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700 }}>Generate one here →</a>
+              <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1.4' }}>
+                Use an App Password — not your account password.
+                <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, display: 'block', marginTop: '4px' }}>
+                  Generate one here →
+                </a>
               </span>
               {editingId && (
                 <div style={{ marginTop: '12px', padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius)', fontSize: '0.78rem', color: 'var(--muted-foreground)', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>

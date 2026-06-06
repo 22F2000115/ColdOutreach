@@ -1978,3 +1978,17 @@ input:checked + .toggle-slider:before {
   gap: 12px;
 }
 
+/* ── Settings Grid Layout ── */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: stretch;
+}
+
+@media (max-width: 900px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

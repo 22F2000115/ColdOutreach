@@ -2,6 +2,122 @@ import { useState, useEffect } from 'react';
 import { useAuth, api } from '../App';
 import { Navigate } from 'react-router-dom';
 
+const CONTEXTS = [
+  {
+    group: 'Professional / Career',
+    items: [
+      { id: 'job_seeker', label: 'Job Seeker / Internship', description: 'Cold email recruiters or hiring managers', fields: [
+        { key: 'target_role', label: 'Role You\'re Targeting', placeholder: 'e.g. Software Engineer Intern', required: true },
+        { key: 'target_company', label: 'Target Company', placeholder: 'e.g. Google', required: true },
+        { key: 'your_background', label: 'Your Background / Skills', placeholder: 'e.g. 2nd year CS student, built 3 React projects...', type: 'textarea', required: true },
+        { key: 'ask_type', label: 'What Are You Asking For?', type: 'select', options: ['Interview', 'Referral', 'Informational chat'], required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'e.g. Met them at a hackathon', required: false },
+      ]},
+      { id: 'freelancer_pitch', label: 'Freelancer Pitch', description: 'Pitch your skill or service to potential clients', fields: [
+        { key: 'your_skill', label: 'Your Skill / Service', placeholder: 'e.g. UI/UX Design', required: true },
+        { key: 'target_company', label: 'Target Company', placeholder: 'e.g. Notion', required: true },
+        { key: 'target_role', label: 'Target Role', placeholder: 'e.g. Head of Product', required: true },
+        { key: 'value_offer', label: 'Value You Offer', placeholder: 'e.g. Redesign their onboarding flow to cut drop-off', required: true },
+        { key: 'cta', label: 'CTA', type: 'select', options: ['Book a call', 'Share my portfolio', 'Get a reply', 'Schedule a quick chat'], required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+    ]
+  },
+  {
+    group: 'Business',
+    items: [
+      { id: 'b2b_sales', label: 'B2B Sales', description: 'Sell a product or service to another business', fields: [
+        { key: 'your_company', label: 'Your Company', placeholder: 'e.g. Acme Inc.', required: true },
+        { key: 'product', label: 'What You\'re Selling', placeholder: 'e.g. AI-powered CRM for SMBs', required: true },
+        { key: 'target_company', label: 'Target Company', placeholder: 'e.g. Flipkart', required: true },
+        { key: 'target_role', label: 'Target Role', placeholder: 'e.g. VP of Sales', required: true },
+        { key: 'pain_point', label: 'Pain Point You Solve', placeholder: 'e.g. Sales reps spending 3hrs/day on manual data entry', required: true },
+        { key: 'cta', label: 'CTA', type: 'select', options: ['Book a 15-min call', 'Request a demo', 'Get a reply', 'Schedule a meeting'], required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+      { id: 'saas_demo', label: 'SaaS / Product Demo', description: 'Get someone to try or book a demo of your software', fields: [
+        { key: 'product_name', label: 'Product Name', placeholder: 'e.g. Zapier', required: true },
+        { key: 'target_company', label: 'Target Company', placeholder: 'e.g. HubSpot', required: true },
+        { key: 'target_role', label: 'Target Role', placeholder: 'e.g. Head of Operations', required: true },
+        { key: 'key_benefit', label: 'Key Benefit for This Prospect', placeholder: 'e.g. Cut integration build time by 80%', required: true },
+        { key: 'cta', label: 'CTA', type: 'select', options: ['Book a demo', 'Start a free trial', 'Get a walkthrough', 'Jump on a quick call'], required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+      { id: 'agency_outreach', label: 'Agency Outreach', description: 'Marketing, design, dev, or SEO agencies pitching services', fields: [
+        { key: 'agency_name', label: 'Your Agency Name', placeholder: 'e.g. PixelForge', required: true },
+        { key: 'service', label: 'Service You\'re Pitching', placeholder: 'e.g. Performance Meta Ads', required: true },
+        { key: 'target_company', label: 'Target Company', placeholder: 'e.g. Nykaa', required: true },
+        { key: 'target_role', label: 'Target Role', placeholder: 'e.g. CMO', required: true },
+        { key: 'pain_point', label: 'Gap or Pain Point You Noticed', placeholder: 'e.g. Their ROAS dropped 40% last quarter', required: true },
+        { key: 'cta', label: 'CTA', type: 'select', options: ['Book a strategy call', 'Share a free audit', 'Get a reply', 'Schedule a 20-min chat'], required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+    ]
+  },
+  {
+    group: 'Growth / Partnerships',
+    items: [
+      { id: 'investor_outreach', label: 'Investor Outreach', description: 'Startup founders reaching out to VCs or angels', fields: [
+        { key: 'startup_name', label: 'Startup Name', placeholder: 'e.g. Finlo', required: true },
+        { key: 'sector', label: 'Sector / Industry', placeholder: 'e.g. Fintech', required: true },
+        { key: 'stage', label: 'Stage', type: 'select', options: ['Pre-seed', 'Seed', 'Series A', 'Series B+'], required: true },
+        { key: 'traction', label: 'Traction Highlights', placeholder: 'e.g. ₹20L ARR, 800 paying users, 3x YoY growth', type: 'textarea', required: true },
+        { key: 'ask_size', label: 'Ask Size', placeholder: 'e.g. $500K', required: true },
+        { key: 'why_this_investor', label: 'Why This Investor Specifically', placeholder: 'e.g. You invested in Razorpay, we\'re in the same space', required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+      { id: 'partnership', label: 'Partnership / Collaboration', description: 'Co-marketing, integration deals, brand partnerships', fields: [
+        { key: 'your_company', label: 'Your Company', placeholder: 'e.g. Notion', required: true },
+        { key: 'partner_company', label: 'Partner Company', placeholder: 'e.g. Loom', required: true },
+        { key: 'partnership_type', label: 'Partnership Type', placeholder: 'e.g. Co-marketing, integration, bundle deal', required: true },
+        { key: 'mutual_benefit', label: 'Mutual Benefit', placeholder: 'e.g. Both reach 100K+ remote-first users', required: true },
+        { key: 'cta', label: 'CTA', type: 'select', options: ['Explore together on a call', 'Share a partnership brief', 'Get a reply', 'Set up an intro meeting'], required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+      { id: 'influencer_outreach', label: 'Influencer / Creator Outreach', description: 'Brands reaching out to creators for deals', fields: [
+        { key: 'brand_name', label: 'Brand Name', placeholder: 'e.g. Bewakoof', required: true },
+        { key: 'creator_handle', label: 'Creator Handle / Name', placeholder: 'e.g. @carryminati', required: true },
+        { key: 'collaboration_type', label: 'Collaboration Type', placeholder: 'e.g. Sponsored video, affiliate deal, brand ambassador', required: true },
+        { key: 'offer', label: 'What You\'re Offering', placeholder: 'e.g. ₹50K flat fee + 10% commission on sales', required: true },
+        { key: 'cta', label: 'CTA', type: 'select', options: ['Get a reply if interested', 'Jump on a quick call', 'Share a media kit', 'Confirm interest'], required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+    ]
+  },
+  {
+    group: 'Other',
+    items: [
+      { id: 'podcast_pitch', label: 'Podcast / Media Pitch', description: 'Pitch yourself as a guest or pitch a story', fields: [
+        { key: 'show_name', label: 'Podcast / Show Name', placeholder: 'e.g. The Tim Ferriss Show', required: true },
+        { key: 'episode_angle', label: 'Proposed Episode Angle', placeholder: 'e.g. Why Indian D2C brands are winning on 0 VC funding', required: true },
+        { key: 'your_credentials', label: 'Your Credentials', placeholder: 'e.g. Founded 3 D2C brands, $2M revenue combined', required: true },
+        { key: 'why_their_audience', label: 'Why This Fits Their Audience', placeholder: 'e.g. Your audience loves bootstrapped founder stories', required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+      { id: 'event_conference', label: 'Event / Conference', description: 'Speaker invites, sponsor outreach, attendee invites', fields: [
+        { key: 'event_name', label: 'Event Name', placeholder: 'e.g. SaaStock India 2025', required: true },
+        { key: 'outreach_type', label: 'Type of Outreach', type: 'select', options: ['Speaker invite', 'Sponsor pitch', 'Attendee invite', 'Partnership'], required: true },
+        { key: 'target_name', label: 'Target Name / Company', placeholder: 'e.g. Kunal Shah / CRED', required: true },
+        { key: 'value_to_them', label: 'Value to Them', placeholder: 'e.g. 800 founders in the room, perfect audience for your launch', required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+      { id: 'nonprofit_fundraising', label: 'Non-Profit / Fundraising', description: 'Donation asks, corporate partnership, volunteer recruitment', fields: [
+        { key: 'org_name', label: 'Organisation Name', placeholder: 'e.g. Teach For India', required: true },
+        { key: 'cause', label: 'Cause / Mission', placeholder: 'e.g. Quality education for underserved children', required: true },
+        { key: 'target_type', label: 'Target Type', type: 'select', options: ['Individual donor', 'Corporate sponsor', 'Volunteer', 'Grant body'], required: true },
+        { key: 'ask', label: 'The Specific Ask', placeholder: 'e.g. ₹1L sponsorship for 50 student kits', required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+      { id: 'real_estate', label: 'Real Estate', description: 'Agents reaching out to buyers, sellers, or landlords', fields: [
+        { key: 'outreach_type', label: 'Type of Outreach', type: 'select', options: ['Buyer prospecting', 'Seller prospecting', 'Landlord outreach', 'Investor pitch'], required: true },
+        { key: 'target_description', label: 'Who You\'re Reaching', placeholder: 'e.g. Homeowners in Koramangala with 2+ BHK', required: true },
+        { key: 'property_or_offer', label: 'Property or Offer Details', placeholder: 'e.g. Free property valuation, or 3BHK listing at ₹1.2Cr', required: true },
+        { key: 'extra_context', label: 'Extra Context', placeholder: 'Optional', required: false },
+      ]},
+    ]
+  }
+];
+
 export default function OutreachAI() {
   const { user } = useAuth();
 
@@ -10,16 +126,10 @@ export default function OutreachAI() {
     return <Navigate to="/" replace />;
   }
 
-  // Form states
-  const [recipientCompany, setRecipientCompany] = useState('');
-  const [recipientRole, setRecipientRole] = useState('');
-  const [emailType, setEmailType] = useState('Cold Intro');
-  const [tone, setTone] = useState('Professional');
-  const [goal, setGoal] = useState('Book a call');
+  // State
+  const [selectedContext, setSelectedContext] = useState(null);
+  const [contextData, setContextData] = useState({});
   const [senderName, setSenderName] = useState(user?.email?.split('@')[0] || '');
-  const [extraContext, setExtraContext] = useState('');
-
-  // UI/API states
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -55,8 +165,15 @@ export default function OutreachAI() {
 
   const handleGenerate = async (e) => {
     if (e) e.preventDefault();
-    if (!recipientCompany || !recipientRole || !senderName) {
-      setError('Please fill in all required fields.');
+    if (!selectedContext || !senderName) {
+      setError('Please select a context and fill in your name.');
+      return;
+    }
+
+    const context = CONTEXTS.flatMap(g => g.items).find(c => c.id === selectedContext);
+    const missing = context.fields.filter(f => f.required && f.key !== 'extra_context' && !contextData[f.key]?.trim());
+    if (missing.length > 0) {
+      setError(`Please fill in: ${missing.map(f => f.label).join(', ')}`);
       return;
     }
 
@@ -68,15 +185,10 @@ export default function OutreachAI() {
 
     try {
       const res = await api.post('/api/ai/generate-email', {
-        recipient_company: recipientCompany,
-        recipient_role: recipientRole,
-        email_type: emailType,
-        tone: tone,
-        goal: goal,
+        context_type: selectedContext,
         sender_name: senderName,
-        extra_context: extraContext || null
+        context_data: contextData,
       });
-
       setGeneratedData(res.data);
     } catch (err) {
       setError(err.response?.data?.detail || 'An error occurred during email generation.');
@@ -155,133 +267,122 @@ export default function OutreachAI() {
         {/* Left Column - Form */}
         <div className="card" style={{ padding: '24px', borderRadius: '12px' }}>
           <h2 className="section-title" style={{ marginBottom: '20px' }}>Email Settings</h2>
-          <form onSubmit={handleGenerate} style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-            <div className="form-group">
-              <label className="form-label" htmlFor="recipient_company">
-                Prospect Company
+
+          {/* Sender Name — always visible */}
+          <div className="form-group">
+            <label className="form-label">Your Name</label>
+            <input
+              type="text"
+              className="form-control"
+              placeholder="e.g. Raj"
+              value={senderName}
+              onChange={(e) => setSenderName(e.target.value)}
+            />
+          </div>
+
+          {/* Context Picker */}
+          {!selectedContext ? (
+            <div>
+              <label className="form-label" style={{ marginBottom: '12px', display: 'block' }}>
+                What kind of email are you writing?
               </label>
-              <input
-                id="recipient_company"
-                type="text"
-                className="form-control"
-                placeholder="e.g. Acme Corp"
-                value={recipientCompany}
-                onChange={(e) => setRecipientCompany(e.target.value)}
-                required
-              />
+              {CONTEXTS.map(group => (
+                <div key={group.group} style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted-foreground)', marginBottom: '8px' }}>
+                    {group.group}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {group.items.map(ctx => (
+                      <button
+                        key={ctx.id}
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '10px 14px', height: 'auto', gap: '2px' }}
+                        onClick={() => { setSelectedContext(ctx.id); setContextData({}); }}
+                      >
+                        <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{ctx.label}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', fontWeight: 400 }}>{ctx.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="recipient_role">
-                Prospect Role / Job Title
-              </label>
-              <input
-                id="recipient_role"
-                type="text"
-                className="form-control"
-                placeholder="e.g. VP of Marketing"
-                value={recipientRole}
-                onChange={(e) => setRecipientRole(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="email_type">Email Type</label>
-              <select
-                id="email_type"
-                className="form-control"
-                value={emailType}
-                onChange={(e) => setEmailType(e.target.value)}
+          ) : (
+            /* Dynamic Field Form */
+            <div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ marginBottom: '16px', fontSize: '0.8rem', padding: '6px 12px' }}
+                onClick={() => { setSelectedContext(null); setContextData({}); setGeneratedData(null); setError(null); }}
               >
-                <option value="Cold Intro">Cold Intro</option>
-                <option value="Follow-Up">Follow-Up</option>
-                <option value="Break-Up">Break-Up</option>
-                <option value="Re-Engagement">Re-Engagement</option>
-              </select>
-            </div>
+                ← Change Context
+              </button>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="tone">Tone</label>
-              <select
-                id="tone"
-                className="form-control"
-                value={tone}
-                onChange={(e) => setTone(e.target.value)}
-              >
-                <option value="Professional">Professional</option>
-                <option value="Conversational">Conversational</option>
-                <option value="Direct">Direct</option>
-                <option value="Friendly">Friendly</option>
-              </select>
-            </div>
+              <div style={{ marginBottom: '16px', padding: '10px 14px', background: 'var(--muted)', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
+                {CONTEXTS.flatMap(g => g.items).find(c => c.id === selectedContext)?.label}
+              </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="goal">Campaign Goal</label>
-              <select
-                id="goal"
-                className="form-control"
-                value={goal}
-                onChange={(e) => setGoal(e.target.value)}
-              >
-                <option value="Book a call">Book a call</option>
-                <option value="Get a reply">Get a reply</option>
-                <option value="Drive to a link">Drive to a link</option>
-                <option value="Soft introduction">Soft introduction</option>
-              </select>
-            </div>
+              <form onSubmit={handleGenerate} style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                {CONTEXTS.flatMap(g => g.items).find(c => c.id === selectedContext)?.fields.map(field => (
+                  <div className="form-group" key={field.key}>
+                    <label className="form-label">
+                      {field.label}{field.required && field.key !== 'extra_context' ? ' *' : ''}
+                    </label>
+                    {field.type === 'textarea' ? (
+                      <textarea
+                        className="form-control"
+                        style={{ minHeight: '72px', resize: 'vertical' }}
+                        placeholder={field.placeholder}
+                        value={contextData[field.key] || ''}
+                        onChange={(e) => setContextData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      />
+                    ) : field.type === 'select' ? (
+                      <select
+                        className="form-control"
+                        value={contextData[field.key] || ''}
+                        onChange={(e) => setContextData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      >
+                        <option value="">-- Select --</option>
+                        {field.options.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder={field.placeholder}
+                        value={contextData[field.key] || ''}
+                        onChange={(e) => setContextData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      />
+                    )}
+                  </div>
+                ))}
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="sender_name">
-                Sender Name
-              </label>
-              <input
-                id="sender_name"
-                type="text"
-                className="form-control"
-                placeholder="e.g. John Doe"
-                value={senderName}
-                onChange={(e) => setSenderName(e.target.value)}
-                required
-              />
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={loading}
+                  style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  {loading ? (
+                    <><span className="sending-dot" /> Generating Copy...</>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                        <polyline points="2 17 12 22 22 17"></polyline>
+                        <polyline points="2 12 12 17 22 12"></polyline>
+                      </svg>
+                      Generate Email
+                    </>
+                  )}
+                </button>
+              </form>
             </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="extra_context">Extra Context (Optional)</label>
-              <textarea
-                id="extra_context"
-                className="form-control"
-                style={{ minHeight: '80px', resize: 'vertical' }}
-                placeholder="Add unique details, e.g. 'Met them at SaaSConf' or 'Mention our 20% discount'"
-                value={extraContext}
-                onChange={(e) => setExtraContext(e.target.value)}
-              />
-            </div>
-
-            <button
-              id="generate_btn"
-              type="submit"
-              className="btn btn-primary"
-              disabled={loading}
-              style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-            >
-              {loading ? (
-                <>
-                  <span className="sending-dot" />
-                  Generating Copy...
-                </>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-                    <polyline points="2 17 12 22 22 17"></polyline>
-                    <polyline points="2 12 12 17 22 12"></polyline>
-                  </svg>
-                  Generate Email
-                </>
-              )}
-            </button>
-          </form>
+          )}
         </div>
 
         {/* Right Column - Output Preview */}
@@ -342,7 +443,11 @@ export default function OutreachAI() {
               <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
                 <label className="form-label" style={{ marginBottom: '8px' }}>Email Body</label>
                 <div className="ai-output-body" style={{ flexGrow: 1 }}>
-                  {generatedData.body}
+                  {generatedData.body.split('\n\n').map((para, i) => (
+                    <p key={i} style={{ marginBottom: '12px', lineHeight: '1.65', whiteSpace: 'pre-line' }}>
+                      {para}
+                    </p>
+                  ))}
                 </div>
               </div>
 
@@ -402,7 +507,7 @@ export default function OutreachAI() {
                     disabled={loading}
                     style={{ gap: '8px', display: 'inline-flex', alignItems: 'center' }}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
                     </svg>
                     Regenerate Copy

@@ -61,7 +61,7 @@ export default function CampaignDetail() {
   const [uploadingCsv, setUploadingCsv] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
 
-  const isEditable = campaign ? (campaign.status === 'draft' || campaign.status === 'paused') : false;
+  const isEditable = campaign ? (campaign.status === 'draft' || campaign.status === 'paused' || campaign.status === 'completed') : false;
 
   const isAdmin = user?.role === 'admin';
   const isDeleteQuotaReached = !isAdmin && user?.usage && user?.quotas && user.usage.delete >= user.quotas.delete;
@@ -329,6 +329,33 @@ export default function CampaignDetail() {
       setMessage({ text: getErrorMessage(err, 'Failed to remove recipient'), type: 'error' });
     }
   };
+
+  // Helper to parse placeholders from templates
+  const detectPlaceholders = (text) => {
+    if (!text) return [];
+    const doubleMatches = [...text.matchAll(/\{\{([^}]+)\}\}/g)].map(m => m[1].trim().toLowerCase());
+    const singleMatches = [...text.matchAll(/(?<!\{)\{([^{}]+)\}(?!\})/g)].map(m => m[1].trim().toLowerCase());
+    return [...new Set([...doubleMatches, ...singleMatches])];
+  };
+
+  const getAvailablePlaceholderKeys = () => {
+    const keys = new Set(['first_name', 'last_name', 'company', 'role', 'email']);
+    recipients.forEach(r => {
+      if (r.extra_data) {
+        try {
+          const extra = JSON.parse(r.extra_data);
+          if (extra && typeof extra === 'object') {
+            Object.keys(extra).forEach(k => keys.add(k.trim().toLowerCase()));
+          }
+        } catch (e) {}
+      }
+    });
+    return Array.from(keys);
+  };
+
+  const usedPlaceholders = campaign ? [...new Set([...detectPlaceholders(subject), ...detectPlaceholders(body)])] : [];
+  const availableKeys = getAvailablePlaceholderKeys();
+  const unrecognizedPlaceholders = usedPlaceholders.filter(p => !availableKeys.includes(p));
 
   if (loading) return <p style={{ color: 'var(--muted-foreground)' }}>Loading campaign...</p>;
   if (message.type === 'error' && !campaign) return <div className="alert alert-error">{message.text}</div>;
@@ -613,7 +640,30 @@ export default function CampaignDetail() {
 
       {/* Main Campaign workspace */}
       {activeSection === 'setup' && (
-        <div className="campaign-workspace" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'stretch', marginBottom: '32px' }}>
+        <>
+          {/* Banner explaining editability status */}
+          {campaign && (campaign.status === 'completed' || !isEditable) && (
+            <div className="alert alert-info" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <span>
+                {campaign.status === 'completed' && (
+                  <>This campaign is <strong>Completed</strong>. You can edit the template, add new leads, or import a CSV. Adding leads will automatically shift the campaign status to <strong>Paused</strong> so you can click <strong>Start Campaign</strong> to send to the new recipients.</>
+                )}
+                {campaign.status === 'running' && (
+                  <>This campaign is currently <strong>Running</strong>. To make edits to your template or manage leads, please pause the campaign first.</>
+                )}
+                {campaign.status === 'failed' && (
+                  <>This campaign is in <strong>Failed</strong> status. To fix SMTP connection issues and retry, reset the campaign status from the kebab menu (<code>⋯</code>).</>
+                )}
+              </span>
+            </div>
+          )}
+
+          <div className="campaign-workspace" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'stretch', marginBottom: '32px' }}>
           
           {/* Left Column: Edit Template */}
           <div className="card" style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -650,9 +700,20 @@ export default function CampaignDetail() {
                   onChange={setBody}
                   disabled={!isEditable || savingTemp}
                 />
-                <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', marginTop: '6px' }}>
-                  Use {"{company}"} to insert the company name dynamically.
+                <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', marginTop: '6px', lineHeight: '1.45' }}>
+                  <strong>Supported Placeholders:</strong> <code>{"{{first_name}}"}</code>, <code>{"{{last_name}}"}</code>, <code>{"{{company}}"}</code>, <code>{"{{role}}"}</code>.
+                  <br />
+                  You can also use custom headers from your CSV (e.g. <code>{"{{website}}"}</code>). Both <code>{"{{double}}"}</code> and <code>{"{single}"}</code> braces work.
                 </span>
+                {unrecognizedPlaceholders.length > 0 && (
+                  <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', borderRadius: '6px', fontSize: '0.78rem', color: '#b45309', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontWeight: 700 }}>⚠️ Unrecognized Placeholders:</span>
+                    <span>
+                      The template uses <strong>{unrecognizedPlaceholders.map(u => `{{${u}}}`).join(', ')}</strong> which might not match your lead details. 
+                      Make sure these match your CSV headers exactly, or use standard fields: {availableKeys.map(k => `{{${k}}}`).join(', ')}.
+                    </span>
+                  </div>
+                )}
               </div>
 
               <button
@@ -798,12 +859,19 @@ export default function CampaignDetail() {
                     Download Sample CSV Template
                   </button>
                 </div>
+                <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-subtle)', paddingTop: '12px' }}>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1.45' }}>
+                    <strong>CSV Columns Auto-Mapping Guide:</strong>
+                    <br />
+                    The parser maps columns like <code>email / mail</code> to email, <code>company / org</code> to company, <code>first_name / fname</code> to first name, and <code>role / job title</code> to role. Any other columns are imported as custom tags (e.g. <code>{"{{website}}"}</code>).
+                  </span>
+                </div>
               </form>
             </div>
 
           </div>
-
         </div>
+      </>
       )}
 
       {/* Leads log card */}
@@ -990,7 +1058,7 @@ export default function CampaignDetail() {
                 Reset Campaign Status?
               </p>
               <p style={{ marginBottom: '24px', fontSize: '0.85rem', color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
-                Are you sure you want to reset the status of this campaign? This will allow you to run the campaign again, but outreach logs will be cleared.
+                Resetting will reset all sent history. Starting the campaign will send emails to all recipients again. If you only want to send to new contacts, simply add them and click Start without resetting.
               </p>
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                 <button className="btn btn-secondary" onClick={() => setConfirmResetOpen(false)}>
