@@ -22,6 +22,8 @@ class User(Base):
     # Relationships
     smtp_accounts = relationship("SMTPSettings", back_populates="user", cascade="all, delete-orphan")
     campaigns = relationship("Campaign", back_populates="user", cascade="all, delete-orphan")
+    activity_logs = relationship("ActivityLog", back_populates="user", cascade="all, delete-orphan")
+
 
 
 class SMTPSettings(Base):
@@ -102,5 +104,20 @@ class PlanQuota(Base):
     save_limit = Column(Integer, default=999999, nullable=False)
     max_smtp_accounts = Column(Integer, default=1, nullable=False)
     max_campaigns = Column(Integer, default=3, nullable=False)
+
+
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    event_type = Column(String, nullable=False)  # "campaign", "smtp", "profile"
+    action = Column(String, nullable=False)
+    metadata_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
+
+    # Relationships
+    user = relationship("User", back_populates="activity_logs")
+
 
 

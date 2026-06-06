@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from models import Campaign, Recipient, SMTPSettings, User
 from security import decrypt_password
+from activity import log_activity
+
 
 logger = logging.getLogger("worker")
 logger.setLevel(logging.INFO)
@@ -278,9 +280,31 @@ async def send_campaign_emails(campaign_id: int):
             ).count()
             if remaining == 0:
                 campaign.status = "completed"
+                db.commit()
+                sent_count = db.query(Recipient).filter(
+                    Recipient.campaign_id == campaign_id,
+                    Recipient.status == "sent"
+                ).count()
+                failed_count = db.query(Recipient).filter(
+                    Recipient.campaign_id == campaign_id,
+                    Recipient.status == "failed"
+                ).count()
+                log_activity(
+                    db,
+                    campaign.user_id,
+                    "campaign",
+                    f"Campaign completed: {campaign.name}",
+                    {
+                        "campaign_id": campaign.id,
+                        "campaign_name": campaign.name,
+                        "sent_count": sent_count,
+                        "failed_count": failed_count
+                    }
+                )
             else:
                 campaign.status = "paused"
-            db.commit()
+                db.commit()
+
 
         # Quit SMTP
         try:

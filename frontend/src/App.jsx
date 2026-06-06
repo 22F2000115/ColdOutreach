@@ -225,6 +225,8 @@ function AdminRoute({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showProModal, setShowProModal] = useState(false);
+
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -382,16 +384,6 @@ function AdminRoute({ children }) {
           {/* Nav */}
           <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <Link
-              to="/"
-              className={`sidebar-nav-link${isActive('/') && !isActive('/settings') && !isActive('/campaigns/') ? ' active' : ''}`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M22 2L11 13"></path>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-              </svg>
-              Campaigns
-            </Link>
-            <Link
               to="/settings"
               className={`sidebar-nav-link${isActive('/settings') ? ' active' : ''}`}
             >
@@ -401,6 +393,58 @@ function AdminRoute({ children }) {
               </svg>
               SMTP Settings
             </Link>
+
+            <Link
+              to="/"
+              className={`sidebar-nav-link${isActive('/') && !isActive('/settings') && !isActive('/campaigns/') && !isActive('/outreach-ai') && !isActive('/history') ? ' active' : ''}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M22 2L11 13"></path>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+              Campaigns
+            </Link>
+
+            {user?.plan === 'trial' ? (
+              <button
+                onClick={() => setShowProModal(true)}
+                className="locked-nav-link"
+                style={{ background: 'none', border: 'none', font: 'inherit', textAlign: 'left' }}
+              >
+                <span className="locked-nav-link-left">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                  </svg>
+                  Outreach AI
+                </span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.8 }}>
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+              </button>
+            ) : (
+              <Link
+                to="/outreach-ai"
+                className={`sidebar-nav-link${isActive('/outreach-ai') ? ' active' : ''}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+                Outreach AI
+              </Link>
+            )}
+
+            <Link
+              to="/history"
+              className={`sidebar-nav-link${isActive('/history') ? ' active' : ''}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              History
+            </Link>
+
             <Link
               to="/contact"
               className={`sidebar-nav-link${isActive('/contact') ? ' active' : ''}`}
@@ -411,6 +455,7 @@ function AdminRoute({ children }) {
               </svg>
               Contact Us
             </Link>
+
             {user?.role === 'admin' && (
               <Link
                 to="/admin"
@@ -475,6 +520,33 @@ function AdminRoute({ children }) {
           {children}
         </main>
       </div>
+
+      {showProModal && (
+        <div className="modal-backdrop" onClick={() => setShowProModal(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center', padding: '32px 24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.08)', color: 'var(--primary)' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                  <polyline points="2 17 12 22 22 17"></polyline>
+                  <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+              </div>
+            </div>
+            <h3 className="modal-header" style={{ border: 'none', padding: '0 0 8px 0', fontSize: '1.25rem', fontWeight: 800, justifyContent: 'center' }}>
+              Upgrade to Pro to unlock Outreach AI
+            </h3>
+            <p className="modal-body" style={{ padding: '0 0 24px 0', color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: 1.5 }}>
+              Generate high-converting cold emails instantly using AI.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button className="btn btn-primary" onClick={() => setShowProModal(false)} style={{ width: '100%' }}>
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -486,6 +558,8 @@ import Settings from './pages/Settings';
 import CampaignDetail from './pages/CampaignDetail';
 import AdminDashboard from './pages/AdminDashboard';
 import Contact from './pages/Contact';
+import OutreachAI from './pages/OutreachAI';
+import History from './pages/History';
 
 export default function App() {
   return (
@@ -495,8 +569,10 @@ export default function App() {
           <Route path="/login"    element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/"         element={<ProtectedRoute><AppLayout><Dashboard /></AppLayout></ProtectedRoute>} />
+          <Route path="/outreach-ai" element={<ProtectedRoute><AppLayout><OutreachAI /></AppLayout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><AppLayout><Settings /></AppLayout></ProtectedRoute>} />
           <Route path="/contact"  element={<ProtectedRoute><AppLayout><Contact /></AppLayout></ProtectedRoute>} />
+          <Route path="/history"  element={<ProtectedRoute><AppLayout><History /></AppLayout></ProtectedRoute>} />
           <Route path="/campaigns/:id" element={<ProtectedRoute><AppLayout><CampaignDetail /></AppLayout></ProtectedRoute>} />
           <Route path="/admin"    element={<AdminRoute><AppLayout><AdminDashboard /></AppLayout></AdminRoute>} />
           <Route path="*"         element={<Navigate to="/" replace />} />
@@ -505,3 +581,4 @@ export default function App() {
     </AuthProvider>
   );
 }
+

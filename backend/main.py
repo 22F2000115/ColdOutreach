@@ -17,11 +17,13 @@ from sqlalchemy.orm import Session
 from jose import jwt, JWTError
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 from database import engine, Base, get_db, SessionLocal
-from models import User, SMTPSettings, Campaign, Recipient, ContactDetail, PlanQuota
+from models import User, SMTPSettings, Campaign, Recipient, ContactDetail, PlanQuota, ActivityLog
 from auth import get_password_hash, verify_password, create_access_token, create_refresh_token, get_current_user, get_current_admin_user, JWT_SECRET_KEY, ALGORITHM
+from activity import log_activity
+
 from security import encrypt_password
 from worker import send_campaign_emails, get_smtp_connection, UPLOADS_DIR
 from config import PLAN_LIMITS
@@ -427,7 +429,146 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
     }
 
 
+@app.get("/api/user/activity-log")
+def get_activity_log(
+    event_type: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    import json
+    from sqlalchemy import func, case
+
+    limit = min(max(limit, 1), 200)
+
+    # ── Build summary (unfiltered by event_type / date so stats are always totals) ──
+    user_campaigns = db.query(Campaign).filter(Campaign.user_id == current_user.id).all()
+    campaign_ids = [c.id for c in user_campaigns]
+
+    total_emails_sent = 0
+    delivered_count = 0
+    failed_count = 0
+    total_campaigns_run = 0
+
+    if campaign_ids:
+        stats_rows = db.query(
+            func.count(Recipient.id).label("total"),
+            func.sum(case((Recipient.status == "sent", 1), else_=0)).label("sent"),
+            func.sum(case((Recipient.status.in_(["failed", "bounced"]), 1), else_=0)).label("failed"),
+        ).filter(Recipient.campaign_id.in_(campaign_ids)).one()
+
+        total_emails_sent = stats_rows.total or 0
+        delivered_count = stats_rows.sent or 0
+        failed_count = stats_rows.failed or 0
+
+        total_campaigns_run = db.query(Campaign).filter(
+            Campaign.user_id == current_user.id,
+            Campaign.status.in_(["running", "completed", "paused"])
+        ).count()
+
+    summary = {
+        "total_emails_sent": total_emails_sent,
+        "total_campaigns_run": total_campaigns_run,
+        "delivered_count": delivered_count,
+        "failed_count": failed_count,
+    }
+
+    # ── Build filtered activity logs ──
+    query = db.query(ActivityLog).filter(ActivityLog.user_id == current_user.id)
+
+    if event_type:
+        query = query.filter(ActivityLog.event_type == event_type)
+
+    if from_date:
+        try:
+            from_dt = datetime.datetime.strptime(from_date, "%Y-%m-%d")
+            query = query.filter(ActivityLog.created_at >= from_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid from_date format. Must be YYYY-MM-DD")
+
+    if to_date:
+        try:
+            to_dt = datetime.datetime.strptime(to_date, "%Y-%m-%d") + datetime.timedelta(days=1) - datetime.timedelta(seconds=1)
+            query = query.filter(ActivityLog.created_at <= to_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid to_date format. Must be YYYY-MM-DD")
+
+    logs = query.order_by(ActivityLog.created_at.desc()).offset(offset).limit(limit).all()
+
+    results = []
+    for log in logs:
+        meta = None
+        if log.metadata_json:
+            try:
+                meta = json.loads(log.metadata_json)
+            except Exception:
+                pass
+        results.append({
+            "id": log.id,
+            "event_type": log.event_type,
+            "action": log.action,
+            "metadata": meta,
+            "created_at": log.created_at.isoformat() if log.created_at else None
+        })
+
+    return {"summary": summary, "logs": results}
+
+
+@app.get("/api/user/campaign-activity/{campaign_id}")
+def get_campaign_activity(
+    campaign_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from sqlalchemy import func, case
+
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id,
+        Campaign.user_id == current_user.id
+    ).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+
+    recipients = db.query(Recipient).filter(
+        Recipient.campaign_id == campaign_id
+    ).order_by(Recipient.sent_at.asc()).all()
+
+    total_leads = len(recipients)
+    agg_delivered = sum(1 for r in recipients if r.status == "sent")
+    agg_failed = sum(1 for r in recipients if r.status in ("failed", "bounced"))
+    agg_pending = sum(1 for r in recipients if r.status == "pending")
+
+    send_events = []
+    for r in recipients:
+        if r.status in ("sent", "failed", "bounced"):
+            send_events.append({
+                "email": r.email,
+                "company": r.company or "",
+                "status": "delivered" if r.status == "sent" else r.status,
+                "sent_at": r.sent_at.isoformat() if r.sent_at else None,
+                "error_message": r.error_message or None,
+            })
+
+    return {
+        "id": campaign.id,
+        "name": campaign.name,
+        "status": campaign.status,
+        "created_at": campaign.created_at.isoformat() if campaign.created_at else None,
+        "total_leads": total_leads,
+        "stats": {
+            "delivered": agg_delivered,
+            "failed": agg_failed,
+            "pending": agg_pending,
+        },
+        "send_events": send_events,
+    }
+
+
 # ── SMTP Settings Endpoints ───────────────────────────────────────────────────
+
 
 @app.get("/api/settings/smtp")
 def get_smtp(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -504,8 +645,17 @@ def save_smtp(
             )
             db.add(settings)
             db.commit()
+            db.refresh(settings)
+            log_activity(
+                db,
+                current_user.id,
+                "smtp",
+                f"SMTP account added ({from_email or username})",
+                {"smtp_id": settings.id, "from_email": from_email or username}
+            )
             
     return {"message": "SMTP Settings saved successfully"}
+
 
 
 @app.delete("/api/settings/smtp/{id}")
@@ -525,9 +675,18 @@ def delete_smtp(id: int, current_user: User = Depends(get_current_user), db: Ses
             detail="Cannot delete this sender account because it is currently linked to active campaigns"
         )
         
+    smtp_email = settings.from_email
     db.delete(settings)
     db.commit()
+    log_activity(
+        db,
+        current_user.id,
+        "smtp",
+        f"SMTP account deleted ({smtp_email})",
+        {"from_email": smtp_email}
+    )
     return {"message": "Sender account deleted successfully"}
+
 
 
 @app.post("/api/settings/smtp/test")
@@ -775,8 +934,16 @@ async def create_campaign(
                 db.commit()
 
         increment_usage(current_user, "add", db)
+        log_activity(
+            db,
+            current_user.id,
+            "campaign",
+            f"Campaign created: {name}",
+            {"campaign_id": new_campaign.id, "campaign_name": name}
+        )
         
     return {"message": "Campaign created successfully", "campaign_id": new_campaign.id}
+
 
 
 @app.get("/api/campaigns/{id}")
@@ -870,7 +1037,15 @@ def campaign_action(
         db.commit()
         # Enqueue sending task
         background_tasks.add_task(send_campaign_emails, campaign.id)
+        log_activity(
+            db,
+            current_user.id,
+            "campaign",
+            f"Campaign started: {campaign.name}",
+            {"campaign_id": campaign.id, "campaign_name": campaign.name}
+        )
         return {"message": "Campaign started successfully", "status": "running"}
+
 
     elif action == "pause":
         campaign.status = "paused"
@@ -910,10 +1085,20 @@ def delete_campaign(id: int, current_user: User = Depends(get_current_user), db:
             except Exception:
                 pass
                 
+    campaign_name = campaign.name
+    campaign_id = campaign.id
     db.delete(campaign)
     db.commit()
     increment_usage(current_user, "delete", db)
+    log_activity(
+        db,
+        current_user.id,
+        "campaign",
+        f"Campaign deleted: {campaign_name}",
+        {"campaign_id": campaign_id, "campaign_name": campaign_name}
+    )
     return {"message": "Campaign deleted successfully"}
+
 
 
 # ── Enhanced Campaign Management Endpoints ─────────────────────────────────────
@@ -1113,7 +1298,152 @@ def download_recipients_csv(
     )
 
 
+class AIEmailRequest(BaseModel):
+    recipient_company: str
+    recipient_role: str
+    email_type: str
+    tone: str
+    goal: str
+    sender_name: str
+    extra_context: Optional[str] = None
+
+
+@app.post("/api/ai/generate-email")
+def generate_ai_email(
+    body: AIEmailRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.plan == "trial":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This feature is available on the Pro plan only."
+        )
+        
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Groq API key is not configured on the server. Please add GROQ_API_KEY to the .env file."
+        )
+        
+    system_prompt = (
+    "You are an expert cold email copywriter with years of experience writing emails that get replies. "
+    "Your job is to write a short, highly converting cold email that sounds completely human.\n\n"
+    
+    "You MUST output ONLY a valid JSON object. Do NOT include any markdown formatting (like ```json), "
+    "no explanation, no preamble, and no postamble. The output must be parseable by json.loads() in Python.\n\n"
+    
+    "The JSON object must have exactly two fields:\n"
+    "1. \"subjects\": an array of exactly 3 different subject line options.\n"
+    "2. \"body\": a string containing the full email body in plain text.\n\n"
+    
+    "Subject Line Rules:\n"
+    "- Each subject line must be under 50 characters\n"
+    "- Must sound curiosity-driven and human, not like a marketing email\n"
+    "- Must not use clickbait, excessive punctuation, or all caps\n"
+    "- At least one subject line should use a personalization placeholder\n\n"
+    
+    "Email Body Rules:\n"
+    "- Must be between 80 and 150 words — no longer, no shorter\n"
+    "- Open with something specific to the recipient or their company, never a generic intro like 'I hope this email finds you well'\n"
+    "- Get to the point within the first two sentences\n"
+    "- Have exactly one clear ask at the end — never multiple asks\n"
+    "- The closing CTA must directly reflect the Campaign Goal provided by the user\n"
+    "- Sound like a real human wrote it, not a marketing team\n"
+    "- Never use these spam trigger words: Free, Guaranteed, Act Now, Urgent, Winner, Cash, Discount, Risk-free, No cost, Limited Time\n\n"
+    
+    "Personalization Placeholder Rules:\n"
+    "Use the following exact placeholder format in both subject lines and body where appropriate:\n"
+    "- {{company}} for the recipient's company name\n"
+    "- {{first_name}} for the recipient's first name\n"
+    "- {{last_name}} for the recipient's last name\n"
+    "- {{email}} for the recipient's email address\n"
+    "- {{role}} for the recipient's job title\n"
+    "Do NOT use any other placeholder format such as [Company], [First Name], or {{Company}}. "
+    "Only use the exact formats listed above.\n\n"
+    
+    "Tone Guidance:\n"
+    "- Professional: formal but warm, no slang, clear and direct\n"
+    "- Conversational: casual and friendly, short sentences, feels like a message from a peer\n"
+    "- Direct: no fluff, straight to the value and the ask\n"
+    "- Friendly: warm and approachable, light and easy to read\n\n"
+    
+    "Email Type Guidance:\n"
+    "- Cold Intro: first ever touchpoint, establish who you are and why you're reaching out briefly\n"
+    "- Follow-Up: reference that you reached out before, keep it very short, re-state the ask\n"
+    "- Break-Up: last attempt, acknowledge they've been busy, make it easy to say no or yes\n"
+    "- Re-Engagement: they went cold after earlier interest, remind them of the context briefly\n"
+)
+    
+    user_prompt = (
+    f"Generate a cold email based on the following details:\n"
+    f"- Recipient Company: {body.recipient_company}\n"
+    f"- Recipient Role/Job Title: {body.recipient_role}\n"
+    f"- Email Type: {body.email_type}\n"
+    f"- Tone: {body.tone}\n"
+    f"- Campaign Goal: {body.goal}\n"
+    f"- Sender Name: {body.sender_name}\n"
+    + (f"- Extra Context: {body.extra_context}\n" if body.extra_context else "")
+    + "\nRemember: output ONLY the raw JSON object. No markdown, no explanation, no extra text."
+)
+    if body.extra_context:
+        user_prompt += f"- Extra Context: {body.extra_context}\n"
+        
+    try:
+        import groq
+        import json
+        client = groq.Groq(api_key=api_key)
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            response_format={"type": "json_object"}
+        )
+        
+        content = response.choices[0].message.content.strip()
+        
+        # Clean markdown code blocks if any
+        if content.startswith("```"):
+            lines = content.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            content = "\n".join(lines).strip()
+            
+        parsed = json.loads(content)
+        subjects = parsed.get("subjects") or parsed.get("subject")
+        if not subjects:
+            subjects = ["Cold outreach intro", "Quick question", "Partnership inquiry"]
+        elif isinstance(subjects, str):
+            subjects = [subjects]
+            
+        while len(subjects) < 3:
+            subjects.append(subjects[0] if subjects else "Quick query")
+        subjects = subjects[:3]
+        
+        body_text = parsed.get("body", "")
+        if not body_text:
+            body_text = "Hi {{first_name}},\n\nI wanted to reach out regarding {{company}}..."
+            
+        return {
+            "subjects": subjects,
+            "body": body_text
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate email using AI: {str(e)}"
+        )
+
+
 class BulkDeleteRequest(BaseModel):
+
+
     ids: List[int]
 
 
@@ -1408,15 +1738,21 @@ def update_admin_user(user_id: int, update_data: AdminUserUpdate, current_user: 
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
         
+    plan_changed = False
+    old_plan = None
+    new_plan = None
     if update_data.plan is not None:
         if update_data.plan not in ["trial", "pro"]:
             raise HTTPException(status_code=400, detail="Invalid plan name. Must be 'trial' or 'pro'.")
         if target_user.plan != update_data.plan:
+            plan_changed = True
+            old_plan = target_user.plan
+            new_plan = update_data.plan
             target_user.campaign_add_count = 0
             target_user.campaign_edit_count = 0
             target_user.campaign_delete_count = 0
             target_user.campaign_save_count = 0
-        target_user.plan = update_data.plan
+            target_user.plan = update_data.plan
         
     if update_data.role is not None:
         if update_data.role not in ["user", "admin"]:
@@ -1428,6 +1764,11 @@ def update_admin_user(user_id: int, update_data: AdminUserUpdate, current_user: 
         
     db.commit()
     db.refresh(target_user)
+
+    if plan_changed:
+        action_str = "Plan upgraded to Pro" if new_plan == "pro" else "Plan downgraded to Trial"
+        log_activity(db, target_user.id, "profile", action_str, {"old_plan": old_plan, "new_plan": new_plan})
+
     return {
         "id": target_user.id,
         "email": target_user.email,
@@ -1435,6 +1776,7 @@ def update_admin_user(user_id: int, update_data: AdminUserUpdate, current_user: 
         "role": target_user.role,
         "is_active": target_user.is_active
     }
+
 
 @app.delete("/api/admin/users/{user_id}")
 def delete_admin_user(user_id: int, current_user: User = Depends(get_current_admin_user), db: Session = Depends(get_db)):

@@ -1733,3 +1733,248 @@ input:checked + .toggle-slider:before {
   flex-direction: column;
   gap: 16px;
 }
+
+
+/* ── Outreach AI and Activity History Features ── */
+
+/* Outreach AI Subject Chips */
+.subject-chips-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.subject-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+.subject-chip:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-mid);
+}
+.subject-chip.selected {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 6%, var(--card));
+  box-shadow: 0 0 0 1px var(--primary);
+}
+.subject-chip-radio {
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+
+/* AI Output Body Preview */
+.ai-output-body {
+  white-space: pre-wrap;
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  line-height: 1.65;
+  padding: 16px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  color: var(--foreground);
+  min-height: 150px;
+}
+
+/* Spam Warning Banner */
+.spam-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-sm, 6px);
+  color: #b45309;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin-top: 16px;
+}
+[data-theme="dark"] .spam-warning {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+/* Activity History Timeline */
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.timeline-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  gap: 16px;
+  transition: box-shadow 0.15s;
+}
+.timeline-item:hover {
+  box-shadow: var(--shadow-sm);
+}
+.timeline-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.timeline-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.timeline-icon.campaign {
+  background-color: rgba(99, 102, 241, 0.08);
+  color: var(--primary);
+}
+.timeline-icon.smtp {
+  background-color: rgba(245, 158, 11, 0.08);
+  color: #d97706;
+}
+.timeline-icon.profile {
+  background-color: rgba(148, 163, 184, 0.08);
+  color: var(--muted-foreground);
+}
+[data-theme="dark"] .timeline-icon.smtp {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.timeline-action {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+.timeline-metadata {
+  font-size: 0.82rem;
+  color: var(--muted-foreground);
+}
+.timeline-date {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+/* History Filter Buttons */
+.history-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.history-type-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 0.84rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.filter-btn:hover {
+  color: var(--foreground);
+  border-color: var(--border-mid);
+}
+.filter-btn.active {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+.history-date-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.history-date-input-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.history-date-label {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+.history-date-input {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-mid);
+  background-color: var(--input-bg);
+  color: var(--foreground);
+  font-size: 0.84rem;
+  outline: none;
+  font-family: var(--font-body);
+}
+.history-date-input:focus {
+  border-color: var(--primary);
+}
+.history-reset-link {
+  font-size: 0.84rem;
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.history-reset-link:hover {
+  text-decoration: underline;
+}
+
+/* Lock overlays for Pro items */
+.locked-nav-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--muted-foreground);
+  opacity: 0.6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.locked-nav-link:hover {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+.locked-nav-link-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
