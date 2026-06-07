@@ -2041,8 +2041,8 @@ input:checked + .toggle-slider:before {
   }
 }
 
-/* ── Premium Email Length Radio Cards (Dark Mode only) ── */
-.dark .email-length-group, [data-theme="dark"] .email-length-group {
+/* ── Premium Email Length Radio Cards ── */
+.email-length-group {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
@@ -2050,13 +2050,13 @@ input:checked + .toggle-slider:before {
 }
 
 @media (max-width: 600px) {
-  .dark .email-length-group, [data-theme="dark"] .email-length-group {
+  .email-length-group {
     grid-template-columns: 1fr;
     gap: 8px;
   }
 }
 
-.dark .email-length-option, [data-theme="dark"] .email-length-option {
+.email-length-option {
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -2068,18 +2068,18 @@ input:checked + .toggle-slider:before {
   transition: border-color 0.2s var(--ease-smooth), background 0.2s var(--ease-smooth), box-shadow 0.2s var(--ease-smooth);
 }
 
-.dark .email-length-option:hover, [data-theme="dark"] .email-length-option:hover {
-  border-color: rgba(0, 229, 160, 0.35);
-  background: var(--muted);
+.email-length-option:hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 35%, transparent);
+  background: var(--surface-hover);
 }
 
-.dark .email-length-option.selected, [data-theme="dark"] .email-length-option.selected {
+.email-length-option.selected {
   border-color: var(--accent-primary);
-  background: rgba(0, 229, 160, 0.05);
-  box-shadow: 0 0 12px rgba(0, 229, 160, 0.1);
+  background: color-mix(in srgb, var(--accent-primary) 5%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent-primary) 10%, transparent);
 }
 
-.dark .email-length-radio, [data-theme="dark"] .email-length-radio {
+.email-length-radio {
   margin-top: 3px;
   accent-color: var(--accent-primary);
   width: 16px;
@@ -2087,21 +2087,22 @@ input:checked + .toggle-slider:before {
   cursor: pointer;
 }
 
-.dark .email-length-content, [data-theme="dark"] .email-length-content {
+.email-length-content {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.dark .email-length-title, [data-theme="dark"] .email-length-title {
+.email-length-title {
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--text-primary);
 }
 
-.dark .email-length-range, [data-theme="dark"] .email-length-range {
+.email-length-range {
   font-size: 0.72rem;
   color: var(--text-muted);
 }
+
 
 

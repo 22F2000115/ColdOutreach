@@ -1344,64 +1344,190 @@ VALID_CTA_STRENGTHS = {"soft", "direct"}
 VALID_WRITING_STYLES = {"conversational", "structured", "narrative"}
 
 
+# NOTE: Google's free AI Studio tier allows use of prompts for model training.
+# When moving to production with real user data, switch to a paid Gemini tier
+# or Vertex AI to opt out of training data collection.
+def _call_gemini(system_prompt: str, user_prompt: str, temperature: float, max_tokens: int) -> str:
+    """Call Gemini API and return raw response content string."""
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY is not configured.")
+    from google import genai
+    from google.genai import types
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=temperature,
+            response_mime_type="application/json",
+        ),
+    )
+    return response.text.strip()
+
+
+def _call_groq(system_prompt: str, user_prompt: str, temperature: float, max_tokens: int) -> str:
+    """Call Groq API and return raw response content string."""
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_API_KEY is not configured.")
+    import groq
+    client = groq.Groq(api_key=api_key)
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=temperature,
+        max_tokens=max_tokens,
+        response_format={"type": "json_object"},
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _call_ai_with_fallback(system_prompt: str, user_prompt: str, temperature: float = 0.7, max_tokens: int = 2500) -> str:
+    """Try Gemini first. On any failure, fall back to Groq. Raises RuntimeError if both fail."""
+    errors = []
+    for provider_fn, label in [(_call_gemini, "Gemini"), (_call_groq, "Groq")]:
+        try:
+            return provider_fn(system_prompt, user_prompt, temperature, max_tokens)
+        except Exception as e:
+            errors.append(f"{label}: {str(e)}")
+    raise RuntimeError(f"All AI providers failed — {'; '.join(errors)}")
+
+
 def _build_ai_prompts(role_val, objective_val, target_audience_val, skills_or_offer_val,
                       additional_context_val, sender_name_val, tone_val, length_val,
                       formality_val, cta_strength_val, writing_style_val):
-    """Build the system and user prompts for AI email generation."""
+    """Build system and user prompts for AI email generation."""
+
     system_prompt = (
-        "You are a world-class cold email copywriter with 15+ years of experience writing high-converting outbound campaigns for B2B SaaS, agencies, recruiters, and founders.\n"
-        "Your emails consistently achieve 40%+ open rates and 15%+ reply rates because they are specific, human, and impossible to ignore.\n\n"
-        "You MUST output ONLY a valid JSON object with exactly three top-level fields:\n"
-        "1. \"subjects\": An array of exactly 3 subject line strings. Rules:\n"
-        "   - Each subject MUST be under 45 characters (shorter is better).\n"
-        "   - No punctuation at the end of a subject line.\n"
-        "   - Each subject must use a DIFFERENT emotional hook: Subject 1 = curiosity/intrigue, Subject 2 = specificity/personalization (MUST include {{first_name}} or {{company}}), Subject 3 = directness/urgency.\n"
-        "   - NEVER use: 'Quick question', 'Following up', 'Introduction', 'Checking in', 'Partnership opportunity'.\n\n"
-        "2. \"variations\": An array of exactly 3 email body objects. Each object must have a \"name\" key and a \"body\" key.\n"
-        "   VARIATION RULES — Each variation must be genuinely different in hook, structure, opening sentence, and CTA phrasing:\n"
-        "   - Variation 1 — Hook-First (name: \"Hook-First / Conversational\"): Open with a sharp, specific observation about the recipient's world or a bold statement. NO generic openers. Include a soft, low-friction CTA. End with a P.S. line that adds social proof or urgency (e.g., 'P.S. We helped {{company_type}} grow bookings by 40% last quarter — happy to share the breakdown.').\n"
-        "   - Variation 2 — Problem-Agitate-Solve (name: \"PAS / Structured\"): Open by naming the core pain point the recipient faces. Agitate it with one concrete consequence. Present your solution with 3-4 bullet points of specific benefits/outcomes. Use a direct CTA. NO P.S. line for this variation.\n"
-        "   - Variation 3 — Case Study / Narrative (name: \"Case Study / Story-driven\"): Open with a specific, named client scenario or relatable story (use a realistic company type like 'a 12-person SaaS team in Austin' — NOT generic 'a client'). Include a concrete metric (e.g., '34% increase', 'saved 8 hours/week'). End with a soft CTA. Include a P.S. line teasing another result.\n\n"
-        "   WRITING CONSTRAINTS THAT APPLY TO ALL VARIATIONS:\n"
-        "   - FORBIDDEN openers (never write these): 'I hope this email finds you well', 'My name is', 'I am writing to', 'I would love to connect', 'I came across your profile', 'Just reaching out', 'I wanted to introduce myself'.\n"
-        "   - Every sentence must earn its place. No padding, no filler. Cut anything that doesn't add value.\n"
-        "   - Write peer-to-peer, not vendor-to-prospect. Sound like a knowledgeable colleague, not a salesperson.\n"
-        "   - Use {{first_name}} naturally in the greeting or early in the body. Use {{company}} where relevant.\n"
-        "   - Paragraph separation: use double newlines '\\n\\n'. Use '- ' bullet prefix for lists in Variation 2.\n\n"
-        "3. \"variables\": An array of all unique placeholder variable names detected across ALL subjects and ALL body variations combined. Use lowercase snake_case strings only (e.g., [\"first_name\", \"company\", \"sender_name\"]). Do NOT include the curly braces in this list.\n\n"
-        "PLACEHOLDER RULES:\n"
-        "- ONLY use double curly brace syntax: {{first_name}}, {{company}}, {{sender_name}}, {{job_title}}, {{location}}, etc.\n"
-        "- Variable names must be lowercase snake_case ONLY. No spaces, no capitals, no single braces.\n"
-        "- Do NOT create empty placeholder slots. If you reference a statistic, use a realistic number — not {{result}} or {{metric}}.\n\n"
-        "OUTPUT FORMAT: Raw, valid JSON only. Zero markdown, zero code fences, zero explanation text outside the JSON."
+        "You are a precision cold email copywriter. Your job is to write cold outreach emails that get replies from busy, "
+        "skeptical people who receive 50+ cold emails per day and delete most of them in under 3 seconds.\n\n"
+
+        "CORE PRINCIPLES:\n"
+        "- Every email must pass the 'real human' test. It must read as if written by a thoughtful senior professional, not software.\n"
+        "- Never start from the sender. Start from the recipient's world — what they care about, what they're dealing with, what makes them pause.\n"
+        "- Every benefit claim must be anchored to a specific number, company type, or timeframe. 'Better results' is rejected. "
+        "'34% increase in reply rates within 3 weeks' is accepted.\n"
+        "- The opener is everything. If the first sentence doesn't create a specific, relevant reason to keep reading, the rest is worthless.\n"
+        "- Every word must earn its place. Cut anything that doesn't add information or forward motion.\n\n"
+
+        "OUTPUT: Raw JSON only. No markdown. No code fences. No explanation text outside the JSON. "
+        "The JSON must contain exactly three top-level keys: 'subjects', 'variations', 'variables'.\n\n"
+
+        "--- KEY 1: 'subjects' ---\n"
+        "An array of exactly 3 subject line strings.\n"
+        "Rules:\n"
+        "- Each under 45 characters. No end punctuation.\n"
+        "- Subject 1 (Curiosity): Creates an incomplete or counterintuitive idea that forces the recipient to open to resolve it.\n"
+        "- Subject 2 (Specific): Personalization-first — MUST contain {{first_name}} or {{company}}. Refers to a specific outcome or situation.\n"
+        "- Subject 3 (Direct): States the exact value or result plainly, no mystery. The reader knows exactly what's inside.\n"
+        "- BANNED subject words/phrases (never use): 'Quick question', 'Following up', 'Introduction', 'Just wanted to', "
+        "'Checking in', 'Touching base', 'Partnership opportunity', 'Collaboration', 'Opportunity', 'Exciting'.\n\n"
+
+        "--- KEY 2: 'variations' ---\n"
+        "An array of exactly 3 objects. Each object has a 'name' key and a 'body' key. "
+        "The three variations must be genuinely different in opening strategy, structure, and CTA — not just the same email with different words.\n\n"
+
+        "VARIATION 1 — name must be exactly: 'Hook-First'\n"
+        "Opening strategy: The very first sentence must be a sharp, specific observation about the recipient's role, industry, or situation "
+        "— a data point, a counterintuitive fact, or a bold claim that signals you understand their world without referencing the sender at all. "
+        "Do NOT introduce yourself or your company in the first sentence. "
+        "Second sentence bridges from that observation to why you're reaching out. "
+        "Third sentence states your offer in one clear, concrete line. "
+        "CTA: A single low-friction question — it should feel almost effortless to reply yes. (e.g. 'Worth a look?' / 'Does this match what you're seeing?') "
+        "End with a P.S. that delivers one concrete proof point: a real metric, a specific client type, or a tangible outcome.\n\n"
+
+        "VARIATION 2 — name must be exactly: 'PAS'\n"
+        "Opening strategy: Pain-Agitate-Solve structure. "
+        "Sentence 1: Name the exact frustration or bottleneck this type of person faces in their role — be specific enough that it feels personal. "
+        "Sentence 2: State the real cost of that problem not being solved (lost revenue, wasted hours, missed growth — pick the most relevant). "
+        "Sentence 3: Introduce your solution as the direct answer to that pain. "
+        "Follow with exactly 3 bullet points — each bullet must describe a specific outcome (what changes for the recipient), not a feature. "
+        "Bullet format: '- [specific result] — [brief how/proof]'. "
+        "CTA: Direct ask — state the exact format and rough time commitment (e.g. 'Open for a 15-min call Thursday or Friday?'). "
+        "No P.S. for this variation.\n\n"
+
+        "VARIATION 3 — name must be exactly: 'Proof-First'\n"
+        "Opening strategy: Lead with a specific, believable mini case study in one tight sentence. "
+        "Use a realistic, specific company type — NOT 'a client' or 'a company'. Use '\'a 12-person SaaS team in HR tech\'' or '\'a DTC brand doing $2M/year\''. "
+        "Include one concrete metric in this sentence (percentage, time saved, revenue impact). "
+        "Sentence 2 connects that result to why it's directly relevant to this recipient's situation. "
+        "Sentence 3 briefly explains the mechanism — why it worked, at the highest level. "
+        "CTA: Soft — offer something low-risk (a breakdown, a relevant example, a quick look). "
+        "End with a P.S. that teases a second result or a related outcome to create additional pull.\n\n"
+
+        "WRITING RULES (apply to all 3 variations without exception):\n"
+        "BANNED first words/phrases for the opening sentence of any body: 'I', 'We', 'My', 'Hi {{first_name}},\\n\\nI', "
+        "'I hope', 'I wanted', 'I came across', 'I noticed', 'I saw', 'Just', 'As a', 'Our company', 'We help', 'We are'.\n"
+        "BANNED phrases anywhere in the body: 'I hope this finds you well', 'I wanted to reach out', 'I am writing to', "
+        "'Touch base', 'Circle back', 'Synergies', 'Game-changing', 'Revolutionary', 'World-class', 'Cutting-edge', "
+        "'Best-in-class', 'Innovative solution', 'Passionate about', 'Leverage', 'Utilize', 'Furthermore', 'Additionally', "
+        "'In conclusion', 'That being said', 'What sets us apart', 'Hope this helps', 'Please do not hesitate', "
+        "'Feel free to reach out', 'Let me know if you have any questions', 'I look forward to hearing from you'.\n"
+        "- The word 'I' may appear a maximum of 2 times in a single variation body. Count strictly.\n"
+        "- Every paragraph must be 1-3 sentences maximum. No walls of text.\n"
+        "- Placeholder syntax: use {{first_name}}, {{company}}, {{sender_name}} with double curly braces ONLY. "
+        "Never invent placeholder slots for things that should be concrete values (e.g. do NOT write {{metric}} or {{result}} — write an actual number).\n"
+        "- Greeting: 'Hi {{first_name}},' followed by \\n\\n then the body.\n"
+        "- Sign-off: '\\n\\nBest,\\n{{sender_name}}' — every variation must end with this exact format.\n"
+        "- Paragraph separation: double newline \\n\\n only. Bullet lists use '- ' prefix.\n\n"
+
+        "--- KEY 3: 'variables' ---\n"
+        "An array of all unique placeholder variable name strings found across ALL subjects and ALL variation bodies combined. "
+        "Lowercase snake_case only (e.g. ['first_name', 'company', 'sender_name']). No curly braces in this list.\n\n"
+
+        "FINAL CHECK before outputting: Read each variation's first sentence. If it mentions the sender, their company, or their product — rewrite it. "
+        "The reader must appear before the writer."
+    )
+    length_guide = {
+        "short": "under 100 words (body only, not counting greeting or sign-off)",
+        "medium": "120–160 words (body only, not counting greeting or sign-off)",
+        "long": "200–250 words (body only, not counting greeting or sign-off)"
+    }.get(length_val, "120–160 words")
+
+    cta_guide = (
+        "a low-friction interest check — feels almost effortless to say yes to (e.g. 'Worth a look?' / 'Does this resonate?' / 'Open to a quick look?')"
+        if cta_strength_val == "soft"
+        else "a specific, direct calendar ask — name the format and rough time (e.g. 'Open for a 15-min call Thursday?' / 'Book a slot here: {{calendar_link}}')"
     )
 
-    length_guide = {"short": "under 100 words", "medium": "120-160 words", "long": "200-250 words"}.get(length_val, "120-160 words")
-    cta_guide = (
-        "low-friction interest check (e.g., 'Worth a quick look?' or 'Does this resonate?')"
-        if cta_strength_val == "soft"
-        else "direct calendar booking ask (e.g., 'Are you free Thursday at 2pm?' or 'Book a 15-min slot here: {{calendar_link}}')"
+    formality_guide = (
+        "formal register — full sentences, no contractions, professional vocabulary, no slang"
+        if formality_val == "formal"
+        else "informal register — contractions welcome, conversational vocabulary, can use short punchy sentences and light colloquialisms"
     )
+
+    style_guide = {
+        "conversational": "flowing prose, short paragraphs, sounds like a real conversation",
+        "structured": "structured with bullets and clear sections, logical and scannable",
+        "narrative": "story-driven, narrative arc, reads like a mini case study or journey"
+    }.get(writing_style_val, "flowing prose, short paragraphs")
 
     user_prompt = (
-        f"Generate a complete cold email template package for the following outreach scenario:\n\n"
+        f"Generate a complete cold email template package for this exact outreach scenario. "
+        f"Write as if you ARE the sender — in their voice, from their perspective:\n\n"
         f"Sender Role / Identity: {role_val}\n"
         f"Outreach Objective / Goal: {objective_val}\n"
-        f"Target Audience (Person or Company type): {target_audience_val}\n"
+        f"Target Audience: {target_audience_val}\n"
         f"Sender's Skills, Experience, Product, or Offer: {skills_or_offer_val}\n"
     )
     if additional_context_val:
-        user_prompt += f"Additional Context or Scenario Notes: {additional_context_val}\n"
-    user_prompt += f"Sender Name to use in sign-off (via {{{{sender_name}}}}): {sender_name_val}\n"
-
+        user_prompt += f"Additional Context: {additional_context_val}\n"
+    user_prompt += f"Sender Name for sign-off (via {{{{sender_name}}}}): {sender_name_val}\n"
     user_prompt += (
-        f"\nTemplate Control Parameters (MUST comply strictly):\n"
+        f"\nControl parameters — comply strictly:\n"
         f"- Tone: {tone_val}\n"
-        f"- Email Length Target: {length_val} ({length_guide} per variation body — not counting greeting/sign-off)\n"
-        f"- Formality Level: {formality_val}\n"
-        f"- CTA Style: {cta_strength_val} — {cta_guide}\n"
-        f"- Writing Style: {writing_style_val}\n\n"
-        f"Produce all 3 subject lines and all 3 distinct email body variations now. Make each variation substantively different — different hook, different structure, different CTA phrasing."
+        f"- Length target: {length_val} — {length_guide}\n"
+        f"- Formality: {formality_val} — {formality_guide}\n"
+        f"- CTA style: {cta_strength_val} — {cta_guide}\n"
+        f"- Writing style: {writing_style_val} — {style_guide}\n\n"
+        f"Produce all 3 subject lines and all 3 body variations now. "
+        f"Make each variation structurally distinct — different opening strategy, different flow, different CTA. "
+        f"A reader who sees all three should not feel they are reading variations of the same email."
     )
 
     return system_prompt, user_prompt
@@ -1427,11 +1553,12 @@ def generate_ai_email(
             detail="This feature is available on the Pro plan only."
         )
         
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
+    gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
+    if not gemini_key and not groq_key:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Groq API key is not configured on the server. Please add GROQ_API_KEY to the .env file."
+            detail="Neither Gemini nor Groq API keys are configured on the server. Please add GOOGLE_API_KEY or GROQ_API_KEY to the .env file."
         )
         
     # 1. Parse and map fields (handle legacy input)
@@ -1515,21 +1642,9 @@ def generate_ai_email(
     )
 
     try:
-        import groq
         import json
-        client = groq.Groq(api_key=api_key)
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.70,
-            max_tokens=2500,
-            response_format={"type": "json_object"}
-        )
+        content = _call_ai_with_fallback(system_prompt, user_prompt, temperature=0.70, max_tokens=2500)
 
-        content = response.choices[0].message.content.strip()
         if content.startswith("```"):
             lines = content.splitlines()
             if lines[0].startswith("```"): lines = lines[1:]
@@ -1551,9 +1666,9 @@ def generate_ai_email(
         if not variations:
             body_fallback = parsed.get("body") or "Hi {{first_name}},\n\nI wanted to reach out regarding {{company}}..."
             variations = [
-                {"name": "Hook-First / Conversational", "body": body_fallback},
-                {"name": "PAS / Structured", "body": body_fallback},
-                {"name": "Case Study / Story-driven", "body": body_fallback}
+                {"name": "Hook-First", "body": body_fallback},
+                {"name": "PAS", "body": body_fallback},
+                {"name": "Proof-First", "body": body_fallback}
             ]
         while len(variations) < 3:
             variations.append(variations[0] if variations else {"name": "Fallback", "body": "Hi {{first_name}}..."})
@@ -1565,10 +1680,11 @@ def generate_ai_email(
             return {"subjects": subjects, "body": variations[0]["body"]}
 
         return {"subjects": subjects, "variations": variations, "variables": detected_vars}
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate email using AI: {str(e)}"
+            detail=f"Failed to generate email: {str(e)}"
         )
 
 
@@ -1578,6 +1694,7 @@ class AIGenerateSubjectsRequest(BaseModel):
     role: str
     objective: str
     target_audience: str
+    skills_or_offer: Optional[str] = None
     existing_subjects: Optional[List[str]] = None
     tone: Optional[str] = "professional"
     count: Optional[int] = 3
@@ -1593,49 +1710,58 @@ def generate_more_subjects(
     if current_user.plan == "trial":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This feature is available on the Pro plan only.")
 
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Groq API key is not configured on the server.")
+    gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
+    if not gemini_key and not groq_key:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Neither Gemini nor Groq API keys are configured on the server.")
 
     count = min(max(body.count or 3, 1), 6)
     existing_note = ""
     if body.existing_subjects:
         existing_note = "\nDo NOT repeat or closely resemble these existing subjects:\n" + "\n".join(f"- {s}" for s in body.existing_subjects)
 
+    offer_line = f"\nOffer / Skills / Product: {body.skills_or_offer}" if body.skills_or_offer else ""
+
     system_prompt = (
-        "You are a subject line specialist. Output ONLY a valid JSON object with one field: \"subjects\" — an array of subject line strings.\n"
-        "Rules: each subject under 45 chars, no end punctuation, vary hooks (curiosity/specificity/directness/FOMO), "
-        "at least one must include {{first_name}} or {{company}}, never use 'Quick question', 'Following up', 'Introduction'. Raw JSON only."
+        "You are a subject line specialist. Output ONLY a valid JSON object with one field: \"subjects\" — an array of subject line strings. "
+        "Rules: each subject must be under 45 characters, no end punctuation. "
+        "Vary hooks across: (1) curiosity — an incomplete or counterintuitive idea, "
+        "(2) specificity — MUST contain {{first_name}} or {{company}}, "
+        "(3) directness — states the exact value plainly. "
+        "BANNED words and phrases: 'Quick question', 'Following up', 'Introduction', 'Just wanted', 'Checking in', "
+        "'Touching base', 'Partnership', 'Collaboration', 'Opportunity', 'Exciting'. "
+        "Raw JSON only, no markdown, no explanation."
     )
     user_prompt = (
-        f"Generate {count} fresh, high-converting subject lines:\n"
-        f"Role: {body.role}\nObjective: {body.objective}\nTarget: {body.target_audience}\nTone: {body.tone or 'professional'}{existing_note}"
+        f"Generate {count} fresh, high-converting cold email subject lines for this exact scenario:\n\n"
+        f"Sender Role: {body.role}\n"
+        f"Objective: {body.objective}\n"
+        f"Target Audience: {body.target_audience}\n"
+        f"Tone: {body.tone or 'professional'}{offer_line}{existing_note}\n\n"
+        f"Write subjects that directly reference the offer/skills above — make each one feel specific, not generic."
     )
 
     try:
-        import groq
         import json
-        client = groq.Groq(api_key=api_key)
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-            temperature=0.80,
-            max_tokens=300,
-            response_format={"type": "json_object"}
-        )
-        content = response.choices[0].message.content.strip()
+        content = _call_ai_with_fallback(system_prompt, user_prompt, temperature=0.80, max_tokens=300)
+
         if content.startswith("```"):
             lines = content.splitlines()
             if lines[0].startswith("```"): lines = lines[1:]
             if lines and lines[-1].startswith("```"): lines = lines[:-1]
             content = "\n".join(lines).strip()
+
         parsed = json.loads(content)
         subjects = parsed.get("subjects") or []
         if isinstance(subjects, str): subjects = [subjects]
         subjects = [s for s in subjects if isinstance(s, str) and s.strip()][:count]
         return {"subjects": subjects}
+
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to generate subjects: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate subjects: {str(e)}"
+        )
 
 
 class TemplateCreateRequest(BaseModel):

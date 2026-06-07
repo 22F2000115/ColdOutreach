@@ -106,10 +106,10 @@ export default function Login() {
         {/* Brand Content */}
         <div style={{ zIndex: 1, maxWidth: '480px', margin: 'auto 0' }}>
           <h2 style={{ fontFamily: 'var(--font-header)', fontSize: '2.8rem', fontWeight: 900, lineHeight: 1.15, marginBottom: '20px', color: '#ffffff' }}>
-            Send personalized cold emails that get replies.
+            Cold emails that capture attention and close deals.
           </h2>
           <p style={{ fontSize: '1.08rem', color: 'rgba(255,255,255,0.7)', lineHeight: 1.6, fontWeight: 500 }}>
-            Automate outreach campaigns, track delivery status, configure robust SMTP settings, and boost conversion rates in one simple platform.
+            Deploy personalized multi-variant templates, bypass spam filters with smart validation, and automate your inbox delivery in one robust suite.
           </p>
         </div>
 

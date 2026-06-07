@@ -1,104 +1,149 @@
-# ColdOutreach — Self-Hosted Cold Email SaaS
+# ColdOutreach
 
-ColdOutreach is a powerful, self-hosted cold email campaign automation platform and SaaS. Designed for businesses, founders, and sales teams who want complete ownership of their outreach data and operations, ColdOutreach runs locally or on your own server, allowing you to send highly personalized outreach sequences using your own email domains with zero recurring software fees.
+Self-hosted cold email campaign automation platform. Built for founders, sales teams, and agencies who want complete ownership of their outreach infrastructure — no recurring software fees, no third-party data storage.
+
+---
+
+## What It Does
+
+ColdOutreach lets you run personalized cold email campaigns from your own machine or server using your own SMTP accounts. You control the data, the sending rate, and the infrastructure.
 
 ---
 
 ## Features
 
-- **Cold Email Campaign Management**: Create, start, pause, resume, and delete email campaigns from a clean, central dashboard.
-- **Gmail & SMTP Configuration**: Connect custom SMTP accounts with support for Gmail App Passwords and real-time connectivity testing.
-- **Lead Import & Management**: Import contacts seamlessly via CSV file uploads or add individual prospects manually.
-- **Personalized Templates**: Write custom templates with a rich text editor supporting dynamic personalization placeholders:
-  - `{{company}}`
-  - `{{first_name}}`
-  - `{{last_name}}`
-  - `{{email}}`
-  - `{{role}}`
-- **Live Progress Tracking**: Monitor active campaigns in real time with counts for total sent, delivered, and bounced/failed emails.
-- **Auto-Retry Mechanism**: Automatically retries sending emails in the background during transient mailbox failures.
-- **Bounce Synchronization**: Connect your sender accounts via secure IMAP to scan and synchronize bounces, marking failed records in a single database transaction.
-- **Attachment Support**: Upload and attach files to your cold outreach sequences.
-- **Outreach AI (Pro Plan Only)**: Write highly converting copy using an AI-powered email generator powered by Groq's `llama-3.3-70b-versatile` model. Instantly generates subject line options and email bodies tailored to prospect details, tone, and campaign goals. Features a premium outcome-focused **Email Length** selector in dark mode with responsive card grids (`Quick & Punchy`, `Balanced & Persuasive`, `Detailed & Technical`) and hover-glow effects.
-- **Activity History**: A per-user logs timeline that tracks important actions (campaign runs, email sends, SMTP modifications, and billing tier updates) alongside detailed campaign stats and accordions.
-- **Secure Authentication**: JWT-based session management with silent access token refreshes and HTTP-only cookie security.
-- **Vibrant Modern UI**: Sleek user experience with full dark and light mode toggle support. Includes custom individual color indicators on metric cards, dynamic theme-compatible badges, and a premium SaaS dark mode (deep blue-black `#07080f` background, `#111318` cards, and `#00e5a0` green glow accent).
-- **High legibility Typography**: All page elements, form labels, secondary muted texts, and input placeholders are optimized with high-contrast color values for maximum legibility in both light and dark mode.
-- **Admin Panel**: Dedicated dashboard for system administration (Metrics Stats, User Search & Actions, global Plan Limits, and Support Contacts).
-- **Embedded Database**: Local SQLite database storage—zero external SQL engine configuration required.
-- **System Robustness**: 
-  - API endpoint rate-limiting protecting sensitive routes.
-  - Thread-safe concurrency database and user-level locks preventing billing quota bypasses.
-  - Strict input validations and file size constraints on uploads.
-  - SMTP passwords encrypted at rest using Fernet symmetric cryptography.
+**Campaign Management**
+- Create, start, pause, resume, and delete campaigns from a central dashboard
+- Live delivery tracking — sent, delivered, bounced, and failed counts updated in real time
+- Auto-retry mechanism for transient SMTP failures
+- Campaign worker locks prevent race conditions during concurrent send operations
+
+**SMTP and Email**
+- Connect any SMTP server — Gmail, Outlook, custom domains
+- Gmail App Password support with connection testing before saving
+- SMTP passwords encrypted at rest using Fernet symmetric cryptography
+- Attachment support per campaign
+
+**Lead Management**
+- Import contacts via CSV upload (up to 6 MB)
+- Add contacts individually
+- Personalization placeholders: `{{first_name}}`, `{{last_name}}`, `{{email}}`, `{{company}}`, `{{role}}`
+
+**Bounce Sync**
+- Connect sender accounts via IMAP
+- Scan inboxes and mark bounced records automatically in a single database transaction
+
+**Outreach AI (Pro Plan)**
+- AI email generator powered by Groq (`llama-3.3-70b-versatile`)
+- Generates multiple subject line options and three full email variations per request
+- Controls: tone, writing style, email length, formality level, CTA strength
+- Quick-start presets for Job Seeker, SaaS Pitch, Freelancer, B2B Sales
+- Spam phrase detection with flagged word highlighting
+- Subject line effectiveness scoring (personalization, character count, power words)
+- Save generated templates to a reusable library
+- Inject templates directly into draft campaigns
+
+**Activity History**
+- Per-user action log — campaign runs, sends, SMTP changes, plan updates
+- Filter by event type and date range
+- CSV export
+
+**Authentication**
+- JWT-based session management
+- 1-hour access tokens with silent rotation
+- HTTP-only refresh cookies (7-day duration)
+- Rate limiting on login (10/min) and registration (5/min) endpoints
+
+**Admin Panel**
+- System stats overview — users, campaigns, daily email volume
+- User management — search, promote, change plan, suspend, delete
+- Global campaign log with ownership records
+- Live plan limit editor — adjust SMTP and campaign quotas per tier
+- Support contact configuration
+
+**UI**
+- Full dark and light mode with persistent preference
+- Responsive layout — desktop and mobile
+- Theme-adaptive component styling using CSS custom properties
 
 ---
 
 ## Tech Stack
 
-- **Backend**: FastAPI (Python), SQLAlchemy ORM, SQLite database, Alembic migrations, Uvicorn, SlowAPI (Rate Limiting), Groq Python SDK, Cryptography (Fernet)
-- **Frontend**: React (v18), React Router (v7), Vite, Tailwind CSS (Design Tokens & Utility Classes)
+| Layer | Technology |
+|---|---|
+| Backend | FastAPI, SQLAlchemy, SQLite, Alembic, Uvicorn |
+| Rate Limiting | SlowAPI |
+| AI | Google GenAI SDK, Groq Python SDK |
+| Encryption | Python `cryptography` (Fernet) |
+| Auth | `python-jose`, `passlib[bcrypt]` |
+| Frontend | React 18, React Router 7, Vite |
+| Styling | Vanilla CSS with design tokens |
 
 ---
 
 ## Project Structure
 
-The project code is organized into clean backend and frontend directories:
-
 ```
 ColdOutreach/
 ├── backend/
-│   ├── main.py              # Application entrypoint (FastAPI routes, middleware, API logic)
-│   ├── models.py            # SQLAlchemy database models
-│   ├── auth.py              # JWT authentication & session helper
-│   ├── config.py            # Plan limits & global configurations
-│   ├── database.py          # SQLAlchemy database engine connection setup
-│   ├── worker.py            # Background worker threads & campaign sending logic
-│   ├── security.py          # SMTP password encryption (Fernet) helpers
-│   ├── activity.py          # Activity logger utility functions
-│   ├── requirements.txt     # Python package dependencies
-│   ├── alembic.ini          # Alembic database migration configuration
-│   ├── alembic/             # Version migrations scripts directory
-│   ├── .env.example         # Template environment file
-│   └── test_api.py          # Backend test suite
+│   ├── main.py              -- FastAPI application, all routes and middleware
+│   ├── models.py            -- SQLAlchemy ORM models
+│   ├── auth.py              -- JWT token creation and validation
+│   ├── worker.py            -- Background campaign sending threads
+│   ├── security.py          -- Fernet encryption helpers for SMTP passwords
+│   ├── activity.py          -- Activity log writer utility
+│   ├── database.py          -- SQLAlchemy engine and session setup
+│   ├── config.py            -- Plan tier limits and global constants
+│   ├── alembic.ini          -- Alembic migration configuration
+│   ├── alembic/             -- Migration version scripts
+│   ├── requirements.txt     -- Python package dependencies
+│   ├── .env.example         -- Environment variable template
+│   └── test_api.py          -- Backend integration test suite
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/           # Application views
-│   │   │   ├── Login.jsx            # User sign-in page
-│   │   │   ├── Register.jsx         # User registration page
-│   │   │   ├── Dashboard.jsx        # Campaigns index & statistics page
-│   │   │   ├── CampaignDetail.jsx   # Specific campaign editor, contacts list, and worker dashboard
-│   │   │   ├── Settings.jsx         # SMTP sender account setup page
-│   │   │   ├── OutreachAI.jsx       # AI email generator page (Outreach AI)
-│   │   │   ├── History.jsx          # Log timeline, activity filters, and CSV exporter
-│   │   │   ├── Contact.jsx          # Support contact & billing upgrade page
-│   │   │   └── AdminDashboard.jsx   # Central administration tabbed panel
-│   │   ├── components/      # Shared components
-│   │   │   ├── RichEditor.jsx         # Wysiwyg template text area
-│   │   │   ├── FailedContactsTab.jsx  # Segmented worker retry logs
-│   │   │   └── TrialExpiredModal.jsx  # Floating billing tier block
-│   │   ├── App.jsx          # Main client router & sidebar layout definition
-│   │   ├── main.jsx         # Vite react rendering entrypoint
-│   │   └── index.css        # Global CSS variables & layout definitions
-│   └── package.json         # Node package configuration
-├── setup.bat                # Automated one-click environment installer
-├── start.bat                # Automation script to start backend & frontend servers
-└── stop.bat                 # Automation script to terminate active processes
+│   │   ├── pages/
+│   │   │   ├── Login.jsx              -- Sign-in page
+│   │   │   ├── Register.jsx           -- Account registration page
+│   │   │   ├── Dashboard.jsx          -- Campaigns overview and stats
+│   │   │   ├── CampaignDetail.jsx     -- Campaign editor, contacts, and worker panel
+│   │   │   ├── Settings.jsx           -- SMTP sender account configuration
+│   │   │   ├── OutreachAI.jsx         -- AI template generator and library
+│   │   │   ├── History.jsx            -- Activity log timeline and CSV export
+│   │   │   ├── Contact.jsx            -- Support and plan upgrade page
+│   │   │   └── AdminDashboard.jsx     -- Admin control panel
+│   │   ├── components/
+│   │   │   ├── RichEditor.jsx         -- WYSIWYG template editor
+│   │   │   ├── FailedContactsTab.jsx  -- Failed delivery retry log
+│   │   │   └── TrialExpiredModal.jsx  -- Plan restriction overlay
+│   │   ├── App.jsx          -- Router configuration and sidebar layout
+│   │   ├── main.jsx         -- React render entry point
+│   │   └── index.css        -- Global design tokens and component styles
+│   └── package.json
+├── setup.bat                -- One-click environment installer (run once)
+├── start.bat                -- Launches backend and frontend servers
+├── stop.bat                 -- Terminates all running server processes
+└── test_contacts.csv        -- Sample CSV for testing contact imports
 ```
 
 ---
 
 ## Prerequisites
 
-Ensure you have the following installed on your machine:
-- **Python**: Version `3.10` or higher (available at [python.org](https://www.python.org/downloads/))
-- **Node.js**: Version `18` or higher (available at [nodejs.org](https://nodejs.org/))
-- **Git**: [git-scm.com](https://git-scm.com/)
+Install the following before running setup:
 
-Verify the installations by running:
-```bash
+| Tool | Minimum Version | Download |
+|---|---|---|
+| Python | 3.10 | https://python.org/downloads |
+| Node.js | 18 LTS | https://nodejs.org |
+| Git | Any | https://git-scm.com |
+
+During Python installation, select "Add Python to PATH".
+
+Verify your installations:
+
+```
 python --version
-pip --version
 node --version
 npm --version
 ```
@@ -107,162 +152,237 @@ npm --version
 
 ## First-Time Setup
 
-1. **Clone the Repository**:
-   ```bash
-   git clone <your-repo-url>
-   cd ColdOutreach
-   ```
+**Step 1 — Clone the repository**
 
-2. **Run the Automated Setup Script**:
-   Double-click the **`setup.bat`** file in the root folder, or execute it in a terminal:
-   ```bash
-   setup.bat
-   ```
-   
-   The installer script handles the following steps:
-   - Verifies the installation of prerequisites on your system PATH.
-   - Installs a local Python virtual environment (`backend/venv`) and installs packages from `requirements.txt`.
-   - Generates a local `backend/.env` file with secure, randomly generated secrets and guides you to register the initial system admin login credentials.
-   - Applies database migrations to create the SQLite file.
-   - Runs `npm install` inside the `frontend/` folder.
+```
+git clone https://github.com/22F2000115/ColdOutreach.git
+cd ColdOutreach
+```
+
+**Step 2 — Run the setup script**
+
+Double-click `setup.bat` in the project root, or run it from a terminal:
+
+```
+setup.bat
+```
+
+The script performs these steps in sequence:
+
+1. Verifies Python, pip, Node.js, and npm are installed and on PATH
+2. Creates a Python virtual environment at `backend/venv`
+3. Installs all Python packages from `backend/requirements.txt`
+4. Generates `backend/.env` with cryptographically secure secrets
+5. Prompts you to set the initial admin account email and password
+6. Applies database migrations via Alembic (creates `backend/database.db`)
+7. Runs `npm install` inside the `frontend/` directory
+
+Run `setup.bat` once on a fresh machine. Re-running it is safe — it skips steps that are already complete and prompts before overwriting existing configuration.
 
 ---
 
 ## Environment File
 
-The file **`backend/.env`** holds your environment keys. It should contain the following fields:
+The setup script creates `backend/.env` automatically. To configure it manually, copy the template:
 
-```env
-JWT_SECRET_KEY=b19d33169b8486c2259477d49bd0ead836f5ed79e9df934915cd70684d5554f9
-ENCRYPTION_KEY=l-oyTTaCBbT-RBYIchpTBqdioFgU8tXQ1ScwzJGpHwI=
-ADMIN_ACCOUNTS=admin@yourapp.com:YourStrongPassword123
-ENV=development
-ALLOWED_ORIGINS=http://localhost:5173
-GROQ_API_KEY=your_groq_api_key_here
+```
+copy backend\.env.example backend\.env
 ```
 
-- **GROQ_API_KEY**: Required to activate **Outreach AI** features. Acquire your key from the Groq console.
-- **ADMIN_ACCOUNTS**: A comma-separated list of administrative accounts in the format `email:password`.
+Then edit `backend/.env` with your values:
+
+```
+JWT_SECRET_KEY=<64-character hex string>
+ENCRYPTION_KEY=<Fernet base64 key>
+ADMIN_ACCOUNTS=admin@example.com:YourStrongPassword123
+ENV=development
+ALLOWED_ORIGINS=http://localhost:5173
+GOOGLE_API_KEY=<your Google Gemini API key>
+GEMINI_API_KEY=<alternative/fallback Google Gemini API key>
+GROQ_API_KEY=<your Groq API key>
+```
+
+**Key notes:**
+
+- `JWT_SECRET_KEY` — Generate with: `python -c "import secrets; print(secrets.token_hex(32))"`
+- `ENCRYPTION_KEY` — Generate with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+- `ADMIN_ACCOUNTS` — Comma-separated list of `email:password` pairs for admin accounts
+- `GOOGLE_API_KEY` — Google Gemini API key. Recommended as the primary provider. Get your key at https://aistudio.google.com
+- `GEMINI_API_KEY` — Alternative key for Google Gemini API (will be used if GOOGLE_API_KEY is not set)
+- `GROQ_API_KEY` — Required to enable Outreach AI fallback or if Google API key is not set. Get your key at https://console.groq.com
+- `ALLOWED_ORIGINS` — Set to your frontend URL. Default is `http://localhost:5173`
+
+Do not commit `backend/.env` to version control. It is already listed in `.gitignore`.
 
 ---
 
-## Running the App
+## Starting the App
 
-### 1. Simple Run
-Double-click the **`start.bat`** script in the root directory. It launches the Python server and Vite dev environment in separate windows. Your browser will automatically navigate to the dashboard at:
-- **Web Interface**: `http://localhost:5173`
+Double-click `start.bat` or run from a terminal:
 
-### 2. Manual Start (Alternative)
-If you prefer starting the processes manually:
+```
+start.bat
+```
 
-**Terminal 1 (Backend API)**:
-```bash
+This launches:
+- The FastAPI backend on `http://localhost:8000`
+- The Vite frontend on `http://localhost:5173`
+
+Both servers open in separate terminal windows. Your browser opens automatically after 5 seconds.
+
+**Manual start (alternative):**
+
+Backend — open a terminal in the project root:
+
+```
 cd backend
-venv\Scripts\activate      # On Windows
-# source venv/bin/activate # On macOS / Linux
+venv\Scripts\activate
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-**Terminal 2 (Frontend Client)**:
-```bash
+Frontend — open a second terminal:
+
+```
 cd frontend
 npm run dev
 ```
 
-### Stopping the App
-Double-click **`stop.bat`** in the root directory to safely shut down both backend and frontend server processes.
+---
+
+## Stopping the App
+
+Double-click `stop.bat` or run from a terminal:
+
+```
+stop.bat
+```
+
+This terminates all uvicorn and Vite/Node processes and closes their terminal windows.
 
 ---
 
 ## Available URLs
 
-| Component | URL |
+| Service | URL |
 |---|---|
-| Main Web Interface | [http://localhost:5173](http://localhost:5173) |
-| Swagger API Documentation | [http://localhost:8000/docs](http://localhost:8000/docs) |
-| ReDoc API Documentation | [http://localhost:8000/redoc](http://localhost:8000/redoc) |
-
----
-
-## Plan Tiers
-
-System resource limits are dictated by the user's plan tier:
-
-| Feature | Trial | Pro |
-|---|---|---|
-| **SMTP Accounts Limit** | 1 | 10 |
-| **Campaigns Limit** | 3 | 50 |
-| **Outreach AI (AI Writer)** | 🔒 Locked | 🔓 Unlocked |
-| **Trial Duration** | 30 days | Unlimited |
-
-*Note: Admins can modify global thresholds per tier dynamically via the App Limits admin tab.*
+| Web Interface | http://localhost:5173 |
+| Swagger API Docs | http://localhost:8000/docs |
+| ReDoc API Docs | http://localhost:8000/redoc |
 
 ---
 
 ## How to Use
 
-1. **Register**: Sign up at [http://localhost:5173/register](http://localhost:5173/register). New users start on the Trial tier.
-2. **Setup SMTP**: Navigate to **SMTP Settings > Add Sender Account**. Input your server credentials (Gmail users should use an [App Password](https://myaccount.google.com/apppasswords)). Click **Test Connection** and save.
-3. **Outreach AI (For Pro Users)**: Go to the **Outreach AI** tab. Specify prospect company, role, email type, tone, and campaign goal to generate high-converting copy. Copy the copy or apply it directly to a draft campaign.
-4. **Create a Campaign**: Go to **Campaigns > New Campaign**. Provide the campaign name, subject, rich-text body, SMTP sender, and attachments.
-5. **Import Leads**: Inside your campaign setup, upload a contact list via a CSV file (maximum 6 MB size constraint) or enter addresses manually.
-6. **Apply Personalization**: Use brackets like `{{first_name}}` or `{{company}}` in the subject or body to personalize emails dynamically with details from the columns of your CSV.
-7. **Start Sending**: Click **Start Campaign**. The worker process will begin sending emails sequentially.
-8. **Track History**: Open the **History** page to review logs of campaign completions, sent messages, account events, and export them as a CSV.
-9. **Sync Bounces**: Under the **History** header, click **Sync Bounces** to query mailboxes via IMAP, automatically updating bounce records.
+**1. Register an account**
+
+Visit http://localhost:5173/register. New accounts start on the Trial tier.
+
+**2. Configure an SMTP sender**
+
+Go to Settings > SMTP Accounts. Add your server credentials. For Gmail, generate an App Password at https://myaccount.google.com/apppasswords — standard Gmail passwords will not work. Click "Test Connection" before saving.
+
+**3. Create a campaign**
+
+Go to Campaigns > New Campaign. Provide a name, subject line, email body, and assign a sender account. Attachments are optional.
+
+**4. Import contacts**
+
+Inside the campaign, upload a CSV file or add contacts manually. Required column: `email`. Optional columns for personalization: `first_name`, `last_name`, `company`, `role`.
+
+**5. Personalize your template**
+
+Use placeholders in the subject or body. Example: `Hi {{first_name}}, I noticed {{company}} recently...`
+
+**6. Start sending**
+
+Click Start Campaign. The background worker begins sending sequentially. Track progress on the campaign detail page.
+
+**7. Use Outreach AI (Pro accounts)**
+
+Go to the Outreach AI tab. Fill in your role, objective, target audience, and offer details. Select tone, writing style, email length, formality, and CTA strength. Click Generate Template. Review, edit, and copy the result or push it directly into a draft campaign.
+
+**8. Review activity**
+
+Open the History page to see a chronological log of all account actions. Filter by type or date range. Export records as CSV.
+
+**9. Sync bounces**
+
+On the History page, click Sync Bounces to scan your sender mailboxes via IMAP and automatically mark bounced contacts.
+
+---
+
+## Plan Tiers
+
+| Feature | Trial | Pro |
+|---|---|---|
+| SMTP Accounts | 1 | 10 |
+| Campaigns | 3 | 50 |
+| Outreach AI | Locked | Unlocked |
+| Duration | 30 days | Unlimited |
+
+Admins can adjust these limits at any time from the Admin Panel > App Limits tab.
 
 ---
 
 ## Admin Panel
 
-Admins can access the dashboard tabs at [http://localhost:5173/admin](http://localhost:5173/admin) to manage system-wide settings:
+Access the admin panel at http://localhost:5173/admin (admin accounts only).
 
-- **Stats Overview**: Tracks total registered users, active campaigns, today's email volume, and system health metrics.
-- **Users Management**: Search, promote roles (User/Admin), toggle tiers (Trial/Pro), suspend/activate, and delete accounts.
-- **Campaigns Log**: A global, read-only list showing campaign status, progression, and ownership records.
-- **App Limits**: Instantly update allowed quotas (Max SMTP accounts, Max campaigns) for both Trial and Pro plan tiers.
-- **Contact Details**: Configure system support emails and external contact URLs.
+| Tab | Description |
+|---|---|
+| Stats | Total users, active campaigns, today's email volume, system health |
+| Users | Search, promote, change plan tier, suspend, or delete accounts |
+| Campaigns | Read-only log of all campaigns across all users |
+| App Limits | Edit SMTP and campaign quotas for Trial and Pro tiers |
+| Contact | Configure system support email and external contact URLs |
 
 ---
 
-## Security & Robustness
+## Security
 
-- **SMTP Password Encryption**: Sender account passwords are encrypted at rest using Fernet symmetric cryptography (`ENCRYPTION_KEY`).
-- **Endpoint Protection**: Rate limits on registration (`5 requests/min`) and login (`10 requests/min`) endpoints defend against brute-force attacks.
-- **JWT Session Safety**: Integrates 1-hour access token rotation with secure, HTTP-only refresh cookies (7-day duration).
-- **Billing Quota Locks**: Concurrent requests are serialized through memory locks, preventing concurrent attempts to bypass SMTP or Campaign limits.
-- **Campaign Worker Locks**: Active campaign pipelines are marked using `is_being_processed` DB locks to prevent race conditions during email generation.
-- **Upload Constraints**: Enforces a strict 6 MB limit validation on CSV file uploads.
+- SMTP passwords are encrypted at rest using Fernet before database storage
+- JWT access tokens expire after 1 hour with automatic silent rotation
+- Refresh tokens are stored in HTTP-only cookies (7-day expiry)
+- Rate limiting: 10 requests/min on login, 5 requests/min on registration
+- Billing quota checks use in-memory locks to prevent concurrent bypass attempts
+- Campaign workers use `is_being_processed` flags to prevent parallel execution on the same campaign
+- CSV uploads are capped at 6 MB
 
 ---
 
 ## Troubleshooting
 
-- **Outreach AI generates errors or doesn't respond**:
-  Ensure you have configured `GROQ_API_KEY` inside your `backend/.env` file and restarted the servers. The platform loads environment variables with override enabled (`load_dotenv(override=True)`) to ensure this configuration takes precedence.
-- **Gmail SMTP issues / Authentication Failed**:
-  Gmail blocks standard password access. Enable 2-Step Verification on your Google Account and configure an **App Password** for SMTP.
-- **setup.bat fails to complete**:
-  Ensure Python, Node.js, and git are properly installed and added to your system PATH. Close the terminal window and start `setup.bat` in a new window.
-- **Alembic migration conflicts**:
-  Ensure your `backend/.env` contains valid values. Delete `backend/database.db` and run `setup.bat` to rebuild the schema from scratch if database corruption occurs.
+**Outreach AI returns errors**
+Verify `GROQ_API_KEY` is set in `backend/.env` and restart the servers. Environment variables are loaded with `override=True` — a server restart is required after any `.env` change.
+
+**Gmail SMTP authentication fails**
+Standard Gmail passwords are blocked for SMTP. Enable 2-Step Verification on your Google account and create an App Password specifically for SMTP use.
+
+**setup.bat fails**
+Confirm Python and Node.js are installed and available on your system PATH. Open a new terminal window and re-run `setup.bat`.
+
+**Alembic migration fails**
+Ensure `backend/.env` contains valid, non-empty values for all required keys. If the database is corrupted, delete `backend/database.db` and re-run `setup.bat` to rebuild the schema from scratch.
+
+**Servers fail to start after setup**
+Check that no other process is using port 8000 or 5173. The backend binds to `127.0.0.1:8000` and the frontend to `localhost:5173`.
 
 ---
 
 ## Running Tests
 
-To run the unit and integration tests, run the following commands inside the virtual environment:
+Activate the virtual environment and run the test suite:
 
-```bash
+```
 cd backend
-venv\Scripts\activate      # Activate virtual environment
-python test_api.py         # Execute test suite
+venv\Scripts\activate
+python test_api.py
 ```
 
-This validates registration flow, JWT token refresh, plan restrictions, admin controls, and encryption utilities.
+The suite covers registration, login, JWT refresh, plan restrictions, admin controls, and encryption utilities.
 
 ---
 
 ## License
 
-This software is released under the **MIT License**. Feel free to use, modify, and distribute it for personal or commercial projects.
+MIT License. Use, modify, and distribute freely for personal or commercial projects.

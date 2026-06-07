@@ -278,6 +278,7 @@ export default function OutreachAI() {
         role: role.trim(),
         objective: objective.trim(),
         target_audience: targetAudience.trim(),
+        skills_or_offer: skillsOrOffer.trim() || null,
         existing_subjects: generatedData.subjects,
         tone,
         count: 3
@@ -629,49 +630,40 @@ export default function OutreachAI() {
 
                 <div className="form-group">
                   <label className="form-label">Email Length</label>
-                  <div className={isDark ? "email-length-group" : "radio-group"} style={isDark ? {} : { display: 'flex', gap: '14px', margin: '4px 0' }}>
+                  <div className="email-length-group">
                     {['short', 'medium', 'long'].map(l => {
-                      if (isDark) {
-                        const getLabels = (val) => {
-                          switch (val) {
-                            case 'short':
-                              return { title: 'Quick & Punchy', range: '<100 words' };
-                            case 'medium':
-                              return { title: 'Balanced & Persuasive', range: '120–160 words' };
-                            case 'long':
-                              return { title: 'Detailed & Technical', range: '200–250 words' };
-                            default:
-                              return { title: val, range: '' };
-                          }
-                        };
-                        const info = getLabels(l);
-                        const isSelected = length === l;
-                        return (
-                          <label
-                            key={l}
-                            className={`email-length-option ${isSelected ? 'selected' : ''}`}
-                          >
-                            <input
-                              type="radio"
-                              name="email-length"
-                              checked={isSelected}
-                              onChange={() => setLength(l)}
-                              className="email-length-radio"
-                            />
-                            <div className="email-length-content">
-                              <span className="email-length-title">{info.title}</span>
-                              <span className="email-length-range">{info.range}</span>
-                            </div>
-                          </label>
-                        );
-                      } else {
-                        return (
-                          <label key={l} className="radio-option" style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.82rem', textTransform: 'capitalize' }}>
-                            <input type="radio" checked={length === l} onChange={() => setLength(l)} />
-                            {l} ({l === 'short' ? '<100 words' : l === 'medium' ? '120-160' : '200-250'})
-                          </label>
-                        );
-                      }
+                      const getLabels = (val) => {
+                        switch (val) {
+                          case 'short':
+                            return { title: 'Quick & Punchy', range: '<100 words' };
+                          case 'medium':
+                            return { title: 'Balanced & Persuasive', range: '120–160 words' };
+                          case 'long':
+                            return { title: 'Detailed & Technical', range: '200–250 words' };
+                          default:
+                            return { title: val, range: '' };
+                        }
+                      };
+                      const info = getLabels(l);
+                      const isSelected = length === l;
+                      return (
+                        <label
+                          key={l}
+                          className={`email-length-option ${isSelected ? 'selected' : ''}`}
+                        >
+                          <input
+                            type="radio"
+                            name="email-length"
+                            checked={isSelected}
+                            onChange={() => setLength(l)}
+                            className="email-length-radio"
+                          />
+                          <div className="email-length-content">
+                            <span className="email-length-title">{info.title}</span>
+                            <span className="email-length-range">{info.range}</span>
+                          </div>
+                        </label>
+                      );
                     })}
                   </div>
                 </div>

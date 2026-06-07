@@ -165,7 +165,8 @@ async def send_campaign_emails(campaign_id: int):
 
         # 3. Test SMTP connection upfront
         try:
-            smtp_conn = get_smtp_connection(
+            smtp_conn = await asyncio.to_thread(
+                get_smtp_connection,
                 smtp_settings.host,
                 smtp_settings.port,
                 smtp_settings.username,
@@ -237,16 +238,17 @@ async def send_campaign_emails(campaign_id: int):
                 try:
                     # Make sure SMTP connection is alive, reconnect if closed
                     try:
-                        smtp_conn.noop()
+                        await asyncio.to_thread(smtp_conn.noop)
                     except Exception:
-                        smtp_conn = get_smtp_connection(
+                        smtp_conn = await asyncio.to_thread(
+                            get_smtp_connection,
                             smtp_settings.host,
                             smtp_settings.port,
                             smtp_settings.username,
                             password_decrypted
                         )
 
-                    smtp_conn.sendmail(smtp_settings.from_email, recipient.email, msg.as_string())
+                    await asyncio.to_thread(smtp_conn.sendmail, smtp_settings.from_email, recipient.email, msg.as_string())
                     success = True
                     break
                 except smtplib.SMTPRecipientsRefused:
@@ -308,11 +310,12 @@ async def send_campaign_emails(campaign_id: int):
 
         # Quit SMTP
         try:
-            smtp_conn.quit()
+            await asyncio.to_thread(smtp_conn.quit)
         except Exception:
             pass
 
     except Exception as e:
+        db.rollback()
         logger.exception(f"Unhandled error in campaign runner {campaign_id}: {e}")
     finally:
         try:
@@ -322,5 +325,6 @@ async def send_campaign_emails(campaign_id: int):
                 campaign.is_being_processed = False
                 db.commit()
         except Exception as ex:
+            db.rollback()
             logger.error(f"Error resetting is_being_processed for campaign {campaign_id}: {ex}")
         db.close()

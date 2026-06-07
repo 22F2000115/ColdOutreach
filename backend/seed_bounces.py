@@ -65,7 +65,7 @@ def seed():
     print("Created outreach campaign.")
 
     # Add recipients
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     recipients = [
         # Sent
         Recipient(campaign_id=campaign.id, email="alex@google.com", company="Google", first_name="Alex", last_name="Page", role="Director", status="sent", sent_at=now),

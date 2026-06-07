@@ -75,7 +75,7 @@ def run_tests():
     assert user.plan == "trial"
     assert user.trial_expires_at is not None
     # Expiry should be around 30 days from now
-    diff = user.trial_expires_at - datetime.datetime.utcnow()
+    diff = user.trial_expires_at - datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
     assert diff.days >= 29 and diff.days <= 30
     db.close()
     print("Registration OK.")
@@ -364,7 +364,7 @@ def run_tests():
     db = SessionLocal()
     user = db.query(User).filter(User.email == test_email).first()
     user.plan = "trial"
-    user.trial_expires_at = datetime.datetime.utcnow() - datetime.timedelta(hours=1)
+    user.trial_expires_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(hours=1)
     db.commit()
     db.close()
     
@@ -389,7 +389,7 @@ def run_tests():
     db = SessionLocal()
     user = db.query(User).filter(User.email == test_email).first()
     user_id = user.id
-    user.trial_expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=30)
+    user.trial_expires_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=30)
     db.commit()
     db.close()
     
