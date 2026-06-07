@@ -93,7 +93,9 @@ function AuthProvider({ children }) {
   const logout = async () => {
     try {
       await api.post('/api/auth/logout');
-    } catch {}
+    } catch {
+      // Ignore logout network errors since the local token is removed anyway
+    }
     localStorage.removeItem('token');
     setUser(null);
     setTrialExpired(false);
@@ -236,10 +238,10 @@ function AdminRoute({ children }) {
 
   const getSidebarBadgeStyle = (role, plan, isDark) => {
     if (isDark) {
-      if (role === 'admin') return { background: 'rgba(99, 102, 241, 0.25)', color: '#C7D2FE', border: '1px solid rgba(99, 102, 241, 0.4)' };
-      if (plan === 'pro') return { background: 'rgba(99, 102, 241, 0.25)', color: '#C7D2FE', border: '1px solid rgba(99, 102, 241, 0.4)' };
-      if (plan === 'trial') return { background: 'rgba(245, 158, 11, 0.25)', color: '#FBBF24', border: '1px solid rgba(245, 158, 11, 0.4)' };
-      return { background: 'rgba(255, 255, 255, 0.1)', color: '#E2E8F0', border: '1px solid rgba(255, 255, 255, 0.15)' };
+      if (role === 'admin') return { background: 'var(--primary-subtle)', color: 'var(--accent-primary)', border: '1px solid var(--primary-border)' };
+      if (plan === 'pro') return { background: 'var(--primary-subtle)', color: 'var(--accent-primary)', border: '1px solid var(--primary-border)' };
+      if (plan === 'trial') return { background: 'var(--warning-subtle)', color: '#fbbf24', border: '1px solid var(--warning-border)' };
+      return { background: 'var(--surface-hover)', color: 'var(--text-muted)', border: '1px solid var(--border)' };
     }
     return {};
   };
@@ -415,7 +417,7 @@ function AdminRoute({ children }) {
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                   </svg>
-                  Outreach AI
+                  AI Template Generator
                 </span>
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.8 }}>
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
@@ -430,7 +432,7 @@ function AdminRoute({ children }) {
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                   <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                 </svg>
-                Outreach AI
+                AI Template Generator
               </Link>
             )}
 
@@ -525,7 +527,7 @@ function AdminRoute({ children }) {
         <div className="modal-backdrop" onClick={() => setShowProModal(false)}>
           <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center', padding: '32px 24px' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.08)', color: 'var(--primary)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '56px', height: '56px', borderRadius: '50%', background: 'var(--primary-subtle)', color: 'var(--primary)' }}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
                   <polyline points="2 17 12 22 22 17"></polyline>
@@ -534,10 +536,10 @@ function AdminRoute({ children }) {
               </div>
             </div>
             <h3 className="modal-header" style={{ border: 'none', padding: '0 0 8px 0', fontSize: '1.25rem', fontWeight: 800, justifyContent: 'center' }}>
-              Upgrade to Pro to unlock Outreach AI
+              Upgrade to Pro to unlock AI Template Generator
             </h3>
             <p className="modal-body" style={{ padding: '0 0 24px 0', color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: 1.5 }}>
-              Generate high-converting cold emails instantly using AI.
+              Generate highly personalized cold email templates instantly using AI.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button className="btn btn-primary" onClick={() => setShowProModal(false)} style={{ width: '100%' }}>

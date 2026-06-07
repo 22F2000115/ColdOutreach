@@ -141,7 +141,7 @@ echo       (This may take a minute on a fresh machine)
 echo.
 "%BACKEND%\venv\Scripts\python.exe" -m pip install --upgrade pip --quiet
 "%BACKEND%\venv\Scripts\pip.exe" install -r "%BACKEND%\requirements.txt"
-if %errorlevel% NEQ 0 (
+if !errorlevel! NEQ 0 (
     echo.
     echo  [FAIL] pip install failed. Common fixes:
     echo         - Run: python -m pip install --upgrade pip
@@ -174,7 +174,7 @@ if exist "%BACKEND%\.env" (
     echo        -------------------------------------------
     echo.
     choice /c YN /m "  Regenerate .env with fresh secrets? (Y=Yes, N=Skip)"
-    if !errorlevel!==1 goto :gen_env
+    if "!errorlevel!"=="1" goto :gen_env
     echo  [SKIP] Keeping existing .env file.
     echo.
     goto :check_env_values
@@ -251,12 +251,12 @@ echo.
 
 pushd "%BACKEND%"
 "%BACKEND%\venv\Scripts\python.exe" -m alembic upgrade head
-set "ALEMBIC_RC=%errorlevel%"
+set "ALEMBIC_RC=!errorlevel!"
 popd
 
-if %ALEMBIC_RC% NEQ 0 (
+if "!ALEMBIC_RC!" NEQ "0" (
     echo.
-    echo  [FAIL] Alembic migration failed (exit code %ALEMBIC_RC%).
+    echo  [FAIL] Alembic migration failed (exit code !ALEMBIC_RC!).
     echo         Common fixes:
     echo          - Make sure backend\.env exists with all required values
     echo          - Make sure no other backend instance is running
@@ -279,7 +279,7 @@ echo.
 if exist "%FRONTEND%\node_modules" (
     echo  [OK]  frontend\node_modules already exists.
     choice /c YN /m "  Re-run npm install anyway? (Y=Yes, N=Skip)"
-    if !errorlevel!==2 goto :npm_skip
+    if "!errorlevel!"=="2" goto :npm_skip
 )
 
 echo  [..] Running: npm install inside frontend\
@@ -287,12 +287,12 @@ echo       (Downloads all React / Vite packages -- may take a minute)
 echo.
 pushd "%FRONTEND%"
 call npm install
-set "NPM_RC=%errorlevel%"
+set "NPM_RC=!errorlevel!"
 popd
 
-if %NPM_RC% NEQ 0 (
+if "!NPM_RC!" NEQ "0" (
     echo.
-    echo  [FAIL] npm install failed (exit code %NPM_RC%).
+    echo  [FAIL] npm install failed (exit code !NPM_RC!).
     echo         Common fixes:
     echo          - Make sure you have internet access
     echo          - Make sure Node.js >= 18 is installed
@@ -336,7 +336,7 @@ echo  =======================================================================
 echo.
 
 choice /c YN /m "  Launch the app right now? (Y=Yes, N=Exit)"
-if %errorlevel%==1 (
+if "!errorlevel!"=="1" (
     echo.
     echo  [..] Launching servers ...
     start "" "%ROOT%\start.bat"

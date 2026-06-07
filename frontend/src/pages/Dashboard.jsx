@@ -35,7 +35,6 @@ export default function Dashboard() {
   const [campaigns, setCampaigns] = useState([]);
   const [senders,   setSenders]   = useState([]);
   const [loading,   setLoading]   = useState(true);
-  const [activeKebabId, setActiveKebabId] = useState(null);
 
   const [showModal, setShowModal]   = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -90,17 +89,19 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    document.title = 'Dashboard - ColdOutreach';
     fetchCampaigns();
     const t = setInterval(async () => {
-      try { const r = await api.get('/api/campaigns'); setCampaigns(r.data || []); } catch {}
+      try {
+        const r = await api.get('/api/campaigns');
+        setCampaigns(r.data || []);
+      } catch {
+        // Ignore background sync errors
+      }
     }, 5000);
-
-    const handleOutsideClick = () => setActiveKebabId(null);
-    document.addEventListener('click', handleOutsideClick);
 
     return () => {
       clearInterval(t);
-      document.removeEventListener('click', handleOutsideClick);
     };
   }, []);
 

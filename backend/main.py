@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from database import engine, Base, get_db, SessionLocal
-from models import User, SMTPSettings, Campaign, Recipient, ContactDetail, PlanQuota, ActivityLog
+from models import User, SMTPSettings, Campaign, Recipient, ContactDetail, PlanQuota, ActivityLog, Template
 from auth import get_password_hash, verify_password, create_access_token, create_refresh_token, get_current_user, get_current_admin_user, JWT_SECRET_KEY, ALGORITHM
 from activity import log_activity
 
@@ -1276,6 +1276,7 @@ def download_recipients_csv(
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["company", "email", "first_name", "last_name", "role", "status", "error_message"])
+
     for r in recipients:
         writer.writerow([
             r.company or "",
@@ -1303,9 +1304,20 @@ def download_recipients_csv(
 
 
 class AIEmailRequest(BaseModel):
-    context_type: str
-    context_data: dict
-    sender_name: str
+    context_type: Optional[str] = None
+    context_data: Optional[dict] = None
+    sender_name: Optional[str] = None
+
+    role: Optional[str] = None
+    objective: Optional[str] = None
+    target_audience: Optional[str] = None
+    skills_or_offer: Optional[str] = None
+    additional_context: Optional[str] = None
+    tone: Optional[str] = None
+    length: Optional[str] = None
+    formality: Optional[str] = None
+    cta_strength: Optional[str] = None
+    writing_style: Optional[str] = None
 
 
 # ── AI Context Definitions ─────────────────────────────────────────────────────
@@ -1325,221 +1337,82 @@ CONTEXT_REQUIRED_FIELDS = {
     "real_estate": ["agent_name", "outreach_type", "target_description", "property_or_offer"],
 }
 
-def get_system_prompt(context_type: str) -> str:
-    base = (
-        "You MUST output ONLY a valid JSON object with exactly two fields:\n"
-        "1. \"subjects\" (array of exactly 3 subject line options, each under 50 characters. Subject lines must be curiosity-driven, highly human, and use 3 distinct angles. At least one option MUST include {{first_name}} or {{company}} placeholder).\n"
-        "2. \"body\" (string, exactly 120-160 words, containing exactly 3 paragraphs separated by double newlines '\\n\\n').\n\n"
-        "No markdown, no explanation, no preamble. Output must be parseable by json.loads().\n\n"
-        "Structure of the body string:\n"
-        "- Paragraph 1 (Hook): Reference a specific observation about the recipient or their world. Must include {{first_name}}. NEVER start with weak or canned openers like 'Hi, I'm [Name]', 'My name is', 'I hope this email finds you well', 'I am writing to', or 'I hope you're having a great week'.\n"
-        "- Paragraph 2 (Value/Proof): Must contain at least one concrete proof point (e.g., a named project, a specific achievement, a credential, or a numeric metric). DO NOT make vague claims like 'I have experience in X' or 'I believe my skills fit X'.\n"
-        "- Paragraph 3 (CTA): Provide a single, confident, low-friction call-to-action. Do not hedge or ask multiple questions. Never use phrases like 'I would love to', 'If you have time', 'I am confident that', or 'Please let me know'.\n\n"
-        "Placeholder rules: Use {{first_name}}, {{last_name}}, {{company}}, {{role}}, {{email}} — no other formats.\n"
-        "Spam trigger words list (BANNED): Free, Guaranteed, Act Now, Urgent, Winner, Cash, Discount, Risk-free, No cost, Limited Time.\n\n"
+VALID_TONES = {"professional", "casual", "startup-style", "bold", "recruiter-friendly", "empathetic"}
+VALID_LENGTHS = {"short", "medium", "long"}
+VALID_FORMALITIES = {"formal", "informal"}
+VALID_CTA_STRENGTHS = {"soft", "direct"}
+VALID_WRITING_STYLES = {"conversational", "structured", "narrative"}
+
+
+def _build_ai_prompts(role_val, objective_val, target_audience_val, skills_or_offer_val,
+                      additional_context_val, sender_name_val, tone_val, length_val,
+                      formality_val, cta_strength_val, writing_style_val):
+    """Build the system and user prompts for AI email generation."""
+    system_prompt = (
+        "You are a world-class cold email copywriter with 15+ years of experience writing high-converting outbound campaigns for B2B SaaS, agencies, recruiters, and founders.\n"
+        "Your emails consistently achieve 40%+ open rates and 15%+ reply rates because they are specific, human, and impossible to ignore.\n\n"
+        "You MUST output ONLY a valid JSON object with exactly three top-level fields:\n"
+        "1. \"subjects\": An array of exactly 3 subject line strings. Rules:\n"
+        "   - Each subject MUST be under 45 characters (shorter is better).\n"
+        "   - No punctuation at the end of a subject line.\n"
+        "   - Each subject must use a DIFFERENT emotional hook: Subject 1 = curiosity/intrigue, Subject 2 = specificity/personalization (MUST include {{first_name}} or {{company}}), Subject 3 = directness/urgency.\n"
+        "   - NEVER use: 'Quick question', 'Following up', 'Introduction', 'Checking in', 'Partnership opportunity'.\n\n"
+        "2. \"variations\": An array of exactly 3 email body objects. Each object must have a \"name\" key and a \"body\" key.\n"
+        "   VARIATION RULES — Each variation must be genuinely different in hook, structure, opening sentence, and CTA phrasing:\n"
+        "   - Variation 1 — Hook-First (name: \"Hook-First / Conversational\"): Open with a sharp, specific observation about the recipient's world or a bold statement. NO generic openers. Include a soft, low-friction CTA. End with a P.S. line that adds social proof or urgency (e.g., 'P.S. We helped {{company_type}} grow bookings by 40% last quarter — happy to share the breakdown.').\n"
+        "   - Variation 2 — Problem-Agitate-Solve (name: \"PAS / Structured\"): Open by naming the core pain point the recipient faces. Agitate it with one concrete consequence. Present your solution with 3-4 bullet points of specific benefits/outcomes. Use a direct CTA. NO P.S. line for this variation.\n"
+        "   - Variation 3 — Case Study / Narrative (name: \"Case Study / Story-driven\"): Open with a specific, named client scenario or relatable story (use a realistic company type like 'a 12-person SaaS team in Austin' — NOT generic 'a client'). Include a concrete metric (e.g., '34% increase', 'saved 8 hours/week'). End with a soft CTA. Include a P.S. line teasing another result.\n\n"
+        "   WRITING CONSTRAINTS THAT APPLY TO ALL VARIATIONS:\n"
+        "   - FORBIDDEN openers (never write these): 'I hope this email finds you well', 'My name is', 'I am writing to', 'I would love to connect', 'I came across your profile', 'Just reaching out', 'I wanted to introduce myself'.\n"
+        "   - Every sentence must earn its place. No padding, no filler. Cut anything that doesn't add value.\n"
+        "   - Write peer-to-peer, not vendor-to-prospect. Sound like a knowledgeable colleague, not a salesperson.\n"
+        "   - Use {{first_name}} naturally in the greeting or early in the body. Use {{company}} where relevant.\n"
+        "   - Paragraph separation: use double newlines '\\n\\n'. Use '- ' bullet prefix for lists in Variation 2.\n\n"
+        "3. \"variables\": An array of all unique placeholder variable names detected across ALL subjects and ALL body variations combined. Use lowercase snake_case strings only (e.g., [\"first_name\", \"company\", \"sender_name\"]). Do NOT include the curly braces in this list.\n\n"
+        "PLACEHOLDER RULES:\n"
+        "- ONLY use double curly brace syntax: {{first_name}}, {{company}}, {{sender_name}}, {{job_title}}, {{location}}, etc.\n"
+        "- Variable names must be lowercase snake_case ONLY. No spaces, no capitals, no single braces.\n"
+        "- Do NOT create empty placeholder slots. If you reference a statistic, use a realistic number — not {{result}} or {{metric}}.\n\n"
+        "OUTPUT FORMAT: Raw, valid JSON only. Zero markdown, zero code fences, zero explanation text outside the JSON."
     )
 
-    contexts = {
-        "job_seeker": (
-            "You are an expert career coach and cold email writer helping students and early-career professionals reach out to recruiters and hiring managers. "
-            "Tone: earnest, concise, and professional. "
-            "Paragraph 1 (Hook): Must reference something specific about {{company}}'s recent work or team focus, connecting it to the target role {{role}}. "
-            "Paragraph 2 (Value/Proof): Anchor around the sender's background (degree, GPA, specific project, or skill), highlighting one concrete result or project name. "
-            "Paragraph 3 (CTA): Ask for a low-friction action (a brief chat, referral, or information about the role/team) without hedging."
-        ),
-        "freelancer_pitch": (
-            "You are an expert freelance business coach writing cold pitches for skilled freelancers. "
-            "Tone: confident, direct, and value-first. "
-            "Paragraph 1 (Hook): Highlight a specific gap, opportunity, or observation about {{company}}'s website, product, or market presence. "
-            "Paragraph 2 (Value/Proof): State the specific freelance service and back it up with a past result/metric (e.g. 'boosted conversion by X%', 'built a custom platform in X weeks'). "
-            "Paragraph 3 (CTA): Suggest a direct low-friction next step to discuss fixing their specific gap."
-        ),
-        "b2b_sales": (
-            "You are a B2B sales copywriter with deep expertise in cold outreach for SaaS and professional services. "
-            "Tone: peer-level, consultative, and outcome-oriented. "
-            "Paragraph 1 (Hook): Reference a real business challenge or industry pain point that a {{role}} at {{company}} faces daily. Do not mention your product name here. "
-            "Paragraph 2 (Value/Proof): Present how you solved this challenge for a comparable organization, specifying a clear numeric outcome or percentage improvement. "
-            "Paragraph 3 (CTA): Propose a low-friction call or reply to explore mutual fit."
-        ),
-        "saas_demo": (
-            "You are a SaaS growth specialist writing demo-request cold emails. "
-            "Tone: conversational, brief, and feature-to-benefit focused. "
-            "Paragraph 1 (Hook): Describe the current inefficient way of working that teams at {{company}} likely face. "
-            "Paragraph 2 (Value/Proof): Introduce the SaaS product and state the key benefit or metric it delivers (e.g., saving X hours, reducing cost by Y%). "
-            "Paragraph 3 (CTA): Invite them to a brief demo or trial as a low-risk, no-obligation step."
-        ),
-        "agency_outreach": (
-            "You are a senior agency business development writer. "
-            "Tone: expert, professional, and peer-to-peer. "
-            "Paragraph 1 (Hook): Make a specific observation about {{company}}'s public marketing campaigns, design style, or technical stack. "
-            "Paragraph 2 (Value/Proof): Introduce your agency's service and back it up with a case study or specific client result/number. "
-            "Paragraph 3 (CTA): Offer a complimentary mini-audit or quick call to share insights."
-        ),
-        "investor_outreach": (
-            "You are an expert startup fundraising advisor helping founders cold email VCs and angels. "
-            "Tone: confident, data-driven, and highly strategic. "
-            "Paragraph 1 (Hook): Introduce the startup and state a compelling, undeniable traction hook or unique market insight. "
-            "Paragraph 2 (Value/Proof): Share key business metrics (revenue growth, active users, team credentials, or pilot programs) and state the sector and target funding stage. "
-            "Paragraph 3 (CTA): Request a brief introductory call to share the deck or see if there is alignment with their thesis."
-        ),
-        "partnership": (
-            "You are a business development specialist writing partnership and co-marketing pitches. "
-            "Tone: collaborative, mutual-growth-focused, and professional. "
-            "Paragraph 1 (Hook): Explain the natural synergy between your company and {{company}} or the partner brand. "
-            "Paragraph 2 (Value/Proof): Define the concrete partnership concept and back it up with a stat (e.g. combined audience size, potential reach, or complementary product benefits). "
-            "Paragraph 3 (CTA): Propose a short brainstorming chat to discuss potential collaboration angles."
-        ),
-        "influencer_outreach": (
-            "You are a brand partnerships manager writing outreach to creators and influencers. "
-            "Tone: warm, genuine, creator-friendly, and enthusiastic. "
-            "Paragraph 1 (Hook): Reference a specific recent video, post, or content style that you genuinely liked from the creator. "
-            "Paragraph 2 (Value/Proof): Propose the partnership offer (free product, affiliate deal, or sponsorship) and explain why the brand is a perfect fit for their audience. "
-            "Paragraph 3 (CTA): Ask for a low-friction reply if they are open to receiving samples or reviewing the collaboration details."
-        ),
-        "podcast_pitch": (
-            "You are a PR and media pitch specialist writing cold emails to podcast hosts. "
-            "Tone: conversational, audience-first, and interesting. "
-            "Paragraph 1 (Hook): Reference a specific past episode of their show and state why it resonated. "
-            "Paragraph 2 (Value/Proof): Propose a specific, highly relevant episode angle and summarize your credentials or unique background that supports it. "
-            "Paragraph 3 (CTA): Ask if they'd be open to a brief guest pitch or exploring this angle."
-        ),
-        "event_conference": (
-            "You are an event marketing specialist writing speaker, sponsor, or attendee invite emails. "
-            "Tone: professional, prestigious, and engaging. "
-            "Paragraph 1 (Hook): Explain why they specifically are being reached out to for the event based on their expertise or role {{role}}. "
-            "Paragraph 2 (Value/Proof): Highlight key details of the event (themes, expected attendance, other key participants) and the unique value they will get or bring. "
-            "Paragraph 3 (CTA): Ask them to confirm interest or availability to review the details/schedule a quick alignment call."
-        ),
-        "nonprofit_fundraising": (
-            "You are a nonprofit communications specialist writing fundraising and partnership outreach. "
-            "Tone: warm, mission-driven, inspiring, and transparent. "
-            "Paragraph 1 (Hook): Open with a compelling statement of the problem or impact achieved, rather than talking about the organization itself. "
-            "Paragraph 2 (Value/Proof): Detail a specific outcome (e.g., number of lives touched, dollars raised/leveraged, or key program metrics) and introduce the nonprofit. "
-            "Paragraph 3 (CTA): Invite them to support the cause or join a short call to see how they can partner."
-        ),
-        "real_estate": (
-            "You are a real estate outreach specialist writing prospecting emails for agents. "
-            "Tone: local-expert, approachable, and highly professional. "
-            "Paragraph 1 (Hook): Reference specific neighbourhood dynamics, market activity, or a property of interest. "
-            "Paragraph 2 (Value/Proof): Present your credentials or a concrete property/offer detail (e.g., past sales stats, listing activity, or valuation range). "
-            "Paragraph 3 (CTA): Offer a complimentary market report, home valuation, or a quick call to discuss details."
-        )
-    }
-
-    context_block = contexts.get(context_type, "You are an expert cold email copywriter.")
-    return base + context_block
-
-
-def build_user_prompt(context_type: str, context_data: dict, sender_name: str) -> str:
-    d = context_data
-
-    builders = {
-        "job_seeker": lambda: (
-            f"Write a cold email from the job seeker {sender_name} to a recruiter or hiring manager at {d.get('target_company')}.\n"
-            f"Role targeted: {d.get('target_role')}\n"
-            f"Writer's background (anchor Paragraph 2 proof point here): {d.get('your_background')}\n"
-            f"Call to action (ask): {d.get('ask_type')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, make the reader feel their recent team direction or projects are highly respected by the writer, making the connection to the target role natural. In Paragraph 2, present a clear, concrete project or achievement from the background. In Paragraph 3, present the clean call to action."
-        ),
-        "freelancer_pitch": lambda: (
-            f"Write a cold freelance pitch email from the freelancer {sender_name} to a {d.get('target_role')} at {d.get('target_company')}.\n"
-            f"Freelance services/skill to pitch: {d.get('your_skill')}\n"
-            f"Core value/proof point (anchor Paragraph 2 here): {d.get('value_offer')}\n"
-            f"Desired CTA: {d.get('cta')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, present a highly specific observation or potential gap in their current product, website, or strategy to show you did your homework. In Paragraph 2, present the service as a solution backed by a concrete case study result or numeric metric. In Paragraph 3, propose the CTA."
-        ),
-        "b2b_sales": lambda: (
-            f"Write a B2B cold sales outreach email from {sender_name} (representing {d.get('your_company')}) to a {d.get('target_role')} at {d.get('target_company')}.\n"
-            f"Product/Service sold: {d.get('product')}\n"
-            f"Core pain point addressed (anchor Paragraph 1 hook here): {d.get('pain_point')}\n"
-            f"Desired CTA: {d.get('cta')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, build immediate empathy by focusing on a specific business challenge that a target recipient is likely struggling with. In Paragraph 2, show how the product solved this challenge for a similar company, quoting a concrete outcome metric. In Paragraph 3, present the CTA."
-        ),
-        "saas_demo": lambda: (
-            f"Write a cold email pitching a SaaS demo from {sender_name} to a {d.get('target_role')} at {d.get('target_company')}.\n"
-            f"SaaS product name: {d.get('product_name')}\n"
-            f"Key benefit/metric (anchor Paragraph 2 proof point here): {d.get('key_benefit')}\n"
-            f"Desired CTA: {d.get('cta')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, describe a specific, tedious or inefficient workflow the prospect's team likely deals with. In Paragraph 2, explain how the product automates or improves this, citing the key benefit/metric as proof. In Paragraph 3, ask for the demo/trial CTA."
-        ),
-        "agency_outreach": lambda: (
-            f"Write a cold agency outreach email from {sender_name} (representing the agency {d.get('agency_name')}) to a {d.get('target_role')} at {d.get('target_company')}.\n"
-            f"Agency service: {d.get('service')}\n"
-            f"Specific observation/gap (anchor Paragraph 1 hook here): {d.get('pain_point')}\n"
-            f"Desired CTA: {d.get('cta')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, reference a specific observation about their public-facing presence or campaigns. In Paragraph 2, present the service with a concrete past result or metric as proof. In Paragraph 3, offer the audit/cta."
-        ),
-        "investor_outreach": lambda: (
-            f"Write a startup investor pitch email from the founder {sender_name} (representing {d.get('startup_name')}) to an investor.\n"
-            f"Sector/Stage: {d.get('sector')} / {d.get('stage')}\n"
-            f"Startup traction (anchor Paragraph 2 proof point here): {d.get('traction')}\n"
-            f"Ask size: {d.get('ask_size')}\n"
-            f"Why this investor (anchor Paragraph 1 hook here): {d.get('why_this_investor')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, explain why this specific investor's portfolio or thesis matches your vision. In Paragraph 2, present the traction numbers and details confidently as proof of rapid growth. In Paragraph 3, ask for a brief intro call."
-        ),
-        "partnership": lambda: (
-            f"Write a partnership outreach email from {sender_name} (representing {d.get('your_company')}) to {d.get('partner_company')}.\n"
-            f"Partnership type: {d.get('partnership_type')}\n"
-            f"Mutual benefit (anchor Paragraph 2 proof point here): {d.get('mutual_benefit')}\n"
-            f"Desired CTA: {d.get('cta')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, hook the reader with a clear synergy statement between the two brands. In Paragraph 2, lay out the partnership details and explain the mutual benefit with a specific expected outcome. In Paragraph 3, propose a quick chat."
-        ),
-        "influencer_outreach": lambda: (
-            f"Write a brand partnership pitch email from {sender_name} (representing {d.get('brand_name')}) to a creator/influencer ({d.get('creator_handle')}).\n"
-            f"Collaboration type: {d.get('collaboration_type')}\n"
-            f"Offer/Details (anchor Paragraph 2 here): {d.get('offer')}\n"
-            f"Desired CTA: {d.get('cta')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, share a genuine hook referencing their content style. In Paragraph 2, detail the collaboration type and offer, showing how it fits their audience. In Paragraph 3, present the low-friction CTA."
-        ),
-        "podcast_pitch": lambda: (
-            f"Write a podcast guest pitch email from {sender_name} to the host of the show {d.get('show_name')}.\n"
-            f"Proposed episode angle (anchor Paragraph 2 proof here): {d.get('episode_angle')}\n"
-            f"Your credentials: {d.get('your_credentials')}\n"
-            f"Why it fits their audience (anchor Paragraph 1 hook here): {d.get('why_their_audience')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, hook the host by referencing a past episode or specific theme and showing why their audience will love a new angle. In Paragraph 2, present the proposed episode angle and back it up with your credentials. In Paragraph 3, present the CTA."
-        ),
-        "event_conference": lambda: (
-            f"Write an event outreach email from {sender_name} regarding the event {d.get('event_name')}.\n"
-            f"Outreach type: {d.get('outreach_type')}\n"
-            f"Target recipient: {d.get('target_name')}\n"
-            f"Value proposition (anchor Paragraph 2 proof point here): {d.get('value_to_them')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, hook the target by explaining why they specifically are a perfect fit for this event role. In Paragraph 2, detail the event and state the concrete value proposition for them. In Paragraph 3, request confirmation of interest."
-        ),
-        "nonprofit_fundraising": lambda: (
-            f"Write a fundraising/partnership cold email from {sender_name} (representing {d.get('org_name')}) to a {d.get('target_type')}.\n"
-            f"Cause: {d.get('cause')}\n"
-            f"Specific ask (anchor Paragraph 3 here): {d.get('ask')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, hook the reader with an inspiring statement of the cause's impact. In Paragraph 2, present a specific program outcome metric or impact number. In Paragraph 3, deliver the ask clearly."
-        ),
-        "real_estate": lambda: (
-            f"Write a real estate outreach email from the agent {sender_name} to a prospect ({d.get('target_description')}).\n"
-            f"Outreach type: {d.get('outreach_type')}\n"
-            f"Property/Offer details (anchor Paragraph 2 proof here): {d.get('property_or_offer')}\n"
-            + (f"Additional context: {d.get('extra_context')}\n" if d.get('extra_context') else "") +
-            f"\nDirection: In Paragraph 1, hook the reader with a hyper-local neighborhood trend or market update. In Paragraph 2, present your active buyer/seller offer or property details as proof of opportunity. In Paragraph 3, request a brief next step."
-        ),
-    }
-
-    builder = builders.get(context_type)
-    if not builder:
-        return f"{sender_name} is writing a cold email. Context: {context_data}"
-
-    return (
-        f"Generate a cold email based on the following:\n\n"
-        f"{builder()}\n\n"
-        f"Remember: follow all system formatting, paragraph structure, word count, and placeholder rules strictly."
+    length_guide = {"short": "under 100 words", "medium": "120-160 words", "long": "200-250 words"}.get(length_val, "120-160 words")
+    cta_guide = (
+        "low-friction interest check (e.g., 'Worth a quick look?' or 'Does this resonate?')"
+        if cta_strength_val == "soft"
+        else "direct calendar booking ask (e.g., 'Are you free Thursday at 2pm?' or 'Book a 15-min slot here: {{calendar_link}}')"
     )
+
+    user_prompt = (
+        f"Generate a complete cold email template package for the following outreach scenario:\n\n"
+        f"Sender Role / Identity: {role_val}\n"
+        f"Outreach Objective / Goal: {objective_val}\n"
+        f"Target Audience (Person or Company type): {target_audience_val}\n"
+        f"Sender's Skills, Experience, Product, or Offer: {skills_or_offer_val}\n"
+    )
+    if additional_context_val:
+        user_prompt += f"Additional Context or Scenario Notes: {additional_context_val}\n"
+    user_prompt += f"Sender Name to use in sign-off (via {{{{sender_name}}}}): {sender_name_val}\n"
+
+    user_prompt += (
+        f"\nTemplate Control Parameters (MUST comply strictly):\n"
+        f"- Tone: {tone_val}\n"
+        f"- Email Length Target: {length_val} ({length_guide} per variation body — not counting greeting/sign-off)\n"
+        f"- Formality Level: {formality_val}\n"
+        f"- CTA Style: {cta_strength_val} — {cta_guide}\n"
+        f"- Writing Style: {writing_style_val}\n\n"
+        f"Produce all 3 subject lines and all 3 distinct email body variations now. Make each variation substantively different — different hook, different structure, different CTA phrasing."
+    )
+
+    return system_prompt, user_prompt
+
+
+def _extract_variables(subjects, variations):
+    """Extract and normalize all {{variable}} placeholders from subjects and variation bodies."""
+    import re
+    all_text = " ".join(subjects) + " " + " ".join(v.get("body", "") for v in variations)
+    raw_matches = re.findall(r"\{\{([^}]+)\}\}", all_text)
+    return sorted({m.strip().lower().replace(" ", "_") for m in raw_matches if m.strip()})
 
 
 @app.post("/api/ai/generate-email")
@@ -1561,17 +1434,86 @@ def generate_ai_email(
             detail="Groq API key is not configured on the server. Please add GROQ_API_KEY to the .env file."
         )
         
-    # Validate required fields for the chosen context
-    required = CONTEXT_REQUIRED_FIELDS.get(body.context_type)
-    if required is None:
-        raise HTTPException(status_code=400, detail=f"Unknown context_type: '{body.context_type}'.")
-    missing = [f for f in required if not body.context_data.get(f)]
-    if missing:
-        raise HTTPException(status_code=400, detail=f"Missing required fields for context '{body.context_type}': {missing}")
+    # 1. Parse and map fields (handle legacy input)
+    is_legacy = bool(body.context_type and body.context_data)
+    
+    if is_legacy:
+        # Validate required fields for the chosen context
+        required = CONTEXT_REQUIRED_FIELDS.get(body.context_type)
+        if required is None:
+            raise HTTPException(status_code=400, detail=f"Unknown context_type: '{body.context_type}'.")
+        missing = [f for f in required if not body.context_data.get(f)]
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Missing required fields for context '{body.context_type}': {missing}")
 
-    system_prompt = get_system_prompt(body.context_type)
-    user_prompt = build_user_prompt(body.context_type, body.context_data, body.sender_name)
+        role_map = {
+            "job_seeker": "Student / Job Seeker",
+            "freelancer_pitch": "Freelancer",
+            "b2b_sales": "B2B Sales Representative",
+            "saas_demo": "SaaS Founder/Salesperson",
+            "agency_outreach": "Agency Partner",
+            "investor_outreach": "Startup Founder",
+            "partnership": "Business Development Manager",
+            "influencer_outreach": "Brand Manager",
+            "podcast_pitch": "Guest Pitcher",
+            "event_conference": "Event Organizer",
+            "nonprofit_fundraising": "Fundraiser",
+            "real_estate": "Real Estate Agent"
+        }
+        role_val = role_map.get(body.context_type, "Outreach Specialist")
+        objective_val = f"Outreach for {body.context_type}"
+        target_audience_val = body.context_data.get("target_company") or body.context_data.get("target_name") or "Prospect"
         
+        details = []
+        for k, v in body.context_data.items():
+            details.append(f"{k}: {v}")
+        skills_or_offer_val = ", ".join(details)
+        
+        additional_context_val = None
+        tone_val = "professional"
+        length_val = "medium"
+        formality_val = "formal"
+        cta_strength_val = "soft"
+        writing_style_val = "conversational"
+        sender_name_val = body.sender_name or "Sender"
+    else:
+        role_val = body.role
+        objective_val = body.objective
+        target_audience_val = body.target_audience
+        skills_or_offer_val = body.skills_or_offer
+        additional_context_val = body.additional_context
+        tone_val = body.tone or "professional"
+        length_val = body.length or "medium"
+        formality_val = body.formality or "formal"
+        cta_strength_val = body.cta_strength or "soft"
+        writing_style_val = body.writing_style or "conversational"
+        sender_name_val = body.sender_name or "Sender"
+
+    if not role_val or not objective_val or not target_audience_val or not skills_or_offer_val:
+        raise HTTPException(
+            status_code=400,
+            detail="Role, objective, target audience, and skills or offer parameters are required."
+        )
+
+    # 3. Validate enum fields
+    if tone_val not in VALID_TONES:
+        raise HTTPException(status_code=400, detail=f"Invalid tone '{tone_val}'. Must be one of: {sorted(VALID_TONES)}")
+    if length_val not in VALID_LENGTHS:
+        raise HTTPException(status_code=400, detail=f"Invalid length '{length_val}'. Must be one of: {sorted(VALID_LENGTHS)}")
+    if formality_val not in VALID_FORMALITIES:
+        raise HTTPException(status_code=400, detail=f"Invalid formality '{formality_val}'. Must be one of: {sorted(VALID_FORMALITIES)}")
+    if cta_strength_val not in VALID_CTA_STRENGTHS:
+        raise HTTPException(status_code=400, detail=f"Invalid cta_strength '{cta_strength_val}'. Must be one of: {sorted(VALID_CTA_STRENGTHS)}")
+    if writing_style_val not in VALID_WRITING_STYLES:
+        raise HTTPException(status_code=400, detail=f"Invalid writing_style '{writing_style_val}'. Must be one of: {sorted(VALID_WRITING_STYLES)}")
+
+    # 4. Build prompts
+    system_prompt, user_prompt = _build_ai_prompts(
+        role_val, objective_val, target_audience_val, skills_or_offer_val,
+        additional_context_val, sender_name_val, tone_val, length_val,
+        formality_val, cta_strength_val, writing_style_val
+    )
+
     try:
         import groq
         import json
@@ -1582,46 +1524,205 @@ def generate_ai_email(
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.85,
-            max_tokens=800,
+            temperature=0.70,
+            max_tokens=2500,
             response_format={"type": "json_object"}
         )
-        
+
         content = response.choices[0].message.content.strip()
-        
-        # Clean markdown code blocks if any
         if content.startswith("```"):
             lines = content.splitlines()
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
+            if lines[0].startswith("```"): lines = lines[1:]
+            if lines and lines[-1].startswith("```"): lines = lines[:-1]
             content = "\n".join(lines).strip()
-            
+
         parsed = json.loads(content)
+
         subjects = parsed.get("subjects") or parsed.get("subject")
         if not subjects:
-            subjects = ["Cold outreach intro", "Quick question", "Partnership inquiry"]
+            subjects = ["Cold outreach intro", "Quick question for {{first_name}}", "Idea for {{company}}"]
         elif isinstance(subjects, str):
             subjects = [subjects]
-            
         while len(subjects) < 3:
             subjects.append(subjects[0] if subjects else "Quick query")
         subjects = subjects[:3]
-        
-        body_text = parsed.get("body", "")
-        if not body_text:
-            body_text = "Hi {{first_name}},\n\nI wanted to reach out regarding {{company}}..."
-            
-        return {
-            "subjects": subjects,
-            "body": body_text
-        }
+
+        variations = parsed.get("variations") or []
+        if not variations:
+            body_fallback = parsed.get("body") or "Hi {{first_name}},\n\nI wanted to reach out regarding {{company}}..."
+            variations = [
+                {"name": "Hook-First / Conversational", "body": body_fallback},
+                {"name": "PAS / Structured", "body": body_fallback},
+                {"name": "Case Study / Story-driven", "body": body_fallback}
+            ]
+        while len(variations) < 3:
+            variations.append(variations[0] if variations else {"name": "Fallback", "body": "Hi {{first_name}}..."})
+        variations = variations[:3]
+
+        detected_vars = _extract_variables(subjects, variations)
+
+        if is_legacy:
+            return {"subjects": subjects, "body": variations[0]["body"]}
+
+        return {"subjects": subjects, "variations": variations, "variables": detected_vars}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate email using AI: {str(e)}"
         )
+
+
+# ── AI: Generate More Subjects ─────────────────────────────────────────────────
+
+class AIGenerateSubjectsRequest(BaseModel):
+    role: str
+    objective: str
+    target_audience: str
+    existing_subjects: Optional[List[str]] = None
+    tone: Optional[str] = "professional"
+    count: Optional[int] = 3
+
+
+@app.post("/api/ai/generate-subjects")
+def generate_more_subjects(
+    body: AIGenerateSubjectsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Generate additional subject line options without regenerating email bodies."""
+    if current_user.plan == "trial":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This feature is available on the Pro plan only.")
+
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Groq API key is not configured on the server.")
+
+    count = min(max(body.count or 3, 1), 6)
+    existing_note = ""
+    if body.existing_subjects:
+        existing_note = "\nDo NOT repeat or closely resemble these existing subjects:\n" + "\n".join(f"- {s}" for s in body.existing_subjects)
+
+    system_prompt = (
+        "You are a subject line specialist. Output ONLY a valid JSON object with one field: \"subjects\" — an array of subject line strings.\n"
+        "Rules: each subject under 45 chars, no end punctuation, vary hooks (curiosity/specificity/directness/FOMO), "
+        "at least one must include {{first_name}} or {{company}}, never use 'Quick question', 'Following up', 'Introduction'. Raw JSON only."
+    )
+    user_prompt = (
+        f"Generate {count} fresh, high-converting subject lines:\n"
+        f"Role: {body.role}\nObjective: {body.objective}\nTarget: {body.target_audience}\nTone: {body.tone or 'professional'}{existing_note}"
+    )
+
+    try:
+        import groq
+        import json
+        client = groq.Groq(api_key=api_key)
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            temperature=0.80,
+            max_tokens=300,
+            response_format={"type": "json_object"}
+        )
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```"):
+            lines = content.splitlines()
+            if lines[0].startswith("```"): lines = lines[1:]
+            if lines and lines[-1].startswith("```"): lines = lines[:-1]
+            content = "\n".join(lines).strip()
+        parsed = json.loads(content)
+        subjects = parsed.get("subjects") or []
+        if isinstance(subjects, str): subjects = [subjects]
+        subjects = [s for s in subjects if isinstance(s, str) and s.strip()][:count]
+        return {"subjects": subjects}
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to generate subjects: {str(e)}")
+
+
+class TemplateCreateRequest(BaseModel):
+    name: str
+    subject: str
+    body: str
+    variables: Optional[List[str]] = None
+
+
+@app.get("/api/templates")
+def get_templates(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    templates = db.query(Template).filter(Template.user_id == current_user.id).order_by(Template.created_at.desc()).all()
+    import json
+    res = []
+    for t in templates:
+        vars_list = []
+        if t.variables:
+            try:
+                vars_list = json.loads(t.variables)
+            except Exception:
+                pass
+        res.append({
+            "id": t.id,
+            "name": t.name,
+            "subject": t.subject,
+            "body": t.body,
+            "variables": vars_list,
+            "created_at": t.created_at.isoformat() if t.created_at else None
+        })
+    return res
+
+
+@app.post("/api/templates")
+def create_template(
+    body: TemplateCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    import json
+    vars_str = json.dumps(body.variables) if body.variables else None
+    new_template = Template(
+        user_id=current_user.id,
+        name=body.name.strip(),
+        subject=body.subject.strip(),
+        body=body.body,
+        variables=vars_str
+    )
+    db.add(new_template)
+    db.commit()
+    db.refresh(new_template)
+    return {"message": "Template saved successfully", "template_id": new_template.id}
+
+
+@app.put("/api/templates/{id}")
+def update_template(
+    id: int,
+    body: TemplateCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    import json
+    template = db.query(Template).filter(Template.id == id, Template.user_id == current_user.id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    template.name = body.name.strip()
+    template.subject = body.subject.strip()
+    template.body = body.body
+    template.variables = json.dumps(body.variables) if body.variables else None
+    db.commit()
+    return {"message": "Template updated successfully"}
+
+
+@app.delete("/api/templates/{id}")
+def delete_template(
+    id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    template = db.query(Template).filter(Template.id == id, Template.user_id == current_user.id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    db.delete(template)
+    db.commit()
+    return {"message": "Template deleted successfully"}
 
 
 class BulkDeleteRequest(BaseModel):

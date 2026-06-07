@@ -3,24 +3,10 @@ import { api } from '../App';
 
 // ─── Icon Components ──────────────────────────────────────────────────────────
 
-function IconSend() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-    </svg>
-  );
-}
 function IconCheck() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="20 6 9 17 4 12"/>
-    </svg>
-  );
-}
-function IconX() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
     </svg>
   );
 }
@@ -199,19 +185,19 @@ function renderLogDetail(log) {
 
 function campaignStatusBadge(status) {
   const map = {
-    completed: { label: 'Completed', color: '#10B981', bg: 'rgba(16,185,129,0.10)' },
-    running:   { label: 'Running',   color: '#6366F1', bg: 'rgba(99,102,241,0.10)' },
-    paused:    { label: 'Paused',    color: '#F59E0B', bg: 'rgba(245,158,11,0.10)' },
-    draft:     { label: 'Draft',     color: '#94A3B8', bg: 'rgba(148,163,184,0.10)' },
+    completed: { label: 'Completed', color: 'var(--success, #10B981)', bg: 'var(--success-subtle, rgba(16,185,129,0.10))', border: '1px solid var(--success-border, rgba(16,185,129,0.20))' },
+    running:   { label: 'Running',   color: 'var(--primary, #6366F1)', bg: 'var(--primary-subtle, rgba(99,102,241,0.10))', border: '1px solid var(--primary-border, rgba(99,102,241,0.20))' },
+    paused:    { label: 'Paused',    color: 'var(--warning, #F59E0B)', bg: 'var(--warning-subtle, rgba(245,158,11,0.10))', border: '1px solid var(--warning-border, rgba(245,158,11,0.20))' },
+    draft:     { label: 'Draft',     color: 'var(--text-muted, #94A3B8)', bg: 'var(--muted-subtle, rgba(148,163,184,0.10))', border: '1px solid var(--muted-border, rgba(148,163,184,0.20))' },
   };
-  const s = map[status] || { label: status, color: '#94A3B8', bg: 'rgba(148,163,184,0.1)' };
+  const s = map[status] || { label: status, color: '#94A3B8', bg: 'rgba(148,163,184,0.1)', border: '1px solid rgba(148,163,184,0.2)' };
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center',
       fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.03em',
       textTransform: 'uppercase',
       color: s.color, background: s.bg,
-      border: `1px solid ${s.color}30`,
+      border: s.border,
       borderRadius: '5px', padding: '2px 8px',
     }}>
       {s.label}
@@ -718,7 +704,7 @@ export default function History() {
         {/* ── Left: Activity Feed ── */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {/* Timeline wrapped in card with padding */}
-          <div className="card bg-white border border-slate-200 dark:bg-[#1A1A1A] dark:border-[#2A2A2A]" style={{
+          <div className="card bg-white border border-slate-200 dark:bg-[var(--bg-card)] dark:border-[var(--border-card)]" style={{
             padding: '24px',
             borderRadius: '12px',
             minHeight: '300px',
@@ -829,7 +815,7 @@ export default function History() {
 
         {/* ── Right: Campaign Breakdown ── */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div className="card bg-white border border-slate-200 dark:bg-[#1A1A1A] dark:border-[#2A2A2A]" style={{
+          <div className="card bg-white border border-slate-200 dark:bg-[var(--bg-card)] dark:border-[var(--border-card)]" style={{
             padding: '24px',
             borderRadius: '12px',
             minHeight: '300px',

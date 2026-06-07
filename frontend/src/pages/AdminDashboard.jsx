@@ -19,7 +19,7 @@ function formatRelativeTime(dateString) {
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 30) return `${diffDays} days ago`;
     return date.toLocaleDateString();
-  } catch (e) {
+  } catch {
     return 'N/A';
   }
 }
@@ -187,6 +187,7 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
+    document.title = 'Admin Dashboard - ColdOutreach';
     loadData();
   }, []);
 

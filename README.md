@@ -19,10 +19,11 @@ ColdOutreach is a powerful, self-hosted cold email campaign automation platform 
 - **Auto-Retry Mechanism**: Automatically retries sending emails in the background during transient mailbox failures.
 - **Bounce Synchronization**: Connect your sender accounts via secure IMAP to scan and synchronize bounces, marking failed records in a single database transaction.
 - **Attachment Support**: Upload and attach files to your cold outreach sequences.
-- **Outreach AI (Pro Plan Only)**: Write highly converting copy using an AI-powered email generator powered by Groq's `llama-3.3-70b-versatile` model. Instantly generates subject line options and email bodies tailored to prospect details, tone, and campaign goals.
+- **Outreach AI (Pro Plan Only)**: Write highly converting copy using an AI-powered email generator powered by Groq's `llama-3.3-70b-versatile` model. Instantly generates subject line options and email bodies tailored to prospect details, tone, and campaign goals. Features a premium outcome-focused **Email Length** selector in dark mode with responsive card grids (`Quick & Punchy`, `Balanced & Persuasive`, `Detailed & Technical`) and hover-glow effects.
 - **Activity History**: A per-user logs timeline that tracks important actions (campaign runs, email sends, SMTP modifications, and billing tier updates) alongside detailed campaign stats and accordions.
 - **Secure Authentication**: JWT-based session management with silent access token refreshes and HTTP-only cookie security.
-- **Vibrant Modern UI**: Sleek user experience with full dark and light mode toggle support.
+- **Vibrant Modern UI**: Sleek user experience with full dark and light mode toggle support. Includes custom individual color indicators on metric cards, dynamic theme-compatible badges, and a premium SaaS dark mode (deep blue-black `#07080f` background, `#111318` cards, and `#00e5a0` green glow accent).
+- **High legibility Typography**: All page elements, form labels, secondary muted texts, and input placeholders are optimized with high-contrast color values for maximum legibility in both light and dark mode.
 - **Admin Panel**: Dedicated dashboard for system administration (Metrics Stats, User Search & Actions, global Plan Limits, and Support Contacts).
 - **Embedded Database**: Local SQLite database storage—zero external SQL engine configuration required.
 - **System Robustness**: 

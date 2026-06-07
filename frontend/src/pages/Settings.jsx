@@ -31,7 +31,10 @@ export default function Settings() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchSenders(); }, []);
+  useEffect(() => {
+    document.title = 'Settings - ColdOutreach';
+    fetchSenders();
+  }, []);
 
   const getErrorMessage = (err, fallback) => {
     if (err.response?.data?.detail) {

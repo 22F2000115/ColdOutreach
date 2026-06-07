@@ -40,7 +40,6 @@ export default function CampaignDetail() {
   const [activeKebabOpen, setActiveKebabOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
-  const [activeContactKebabId, setActiveContactKebabId] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
@@ -130,6 +129,7 @@ export default function CampaignDetail() {
 
   useEffect(() => {
     if (campaign) {
+      document.title = `${campaign.name} - Campaign Details - ColdOutreach`;
       setCampName(campaign.name);
       setSubject(campaign.subject_template || '');
       setBody(campaign.body_template || '');
@@ -139,7 +139,6 @@ export default function CampaignDetail() {
   useEffect(() => {
     const handleOutsideClick = () => {
       setActiveKebabOpen(false);
-      setActiveContactKebabId(null);
     };
     document.addEventListener('click', handleOutsideClick);
     return () => {
@@ -168,21 +167,6 @@ export default function CampaignDetail() {
       setMessage({ text: getErrorMessage(err, `Failed to execute action: ${action}`), type: 'error' });
     } finally {
       setActionLoad(false);
-    }
-  };
-
-  const handleDeleteCampaign = async () => {
-    if (isDeleteQuotaReached) {
-      alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
-      return;
-    }
-    if (!confirm('Delete this campaign? This cannot be undone.')) return;
-    try {
-      await api.delete(`/api/campaigns/${id}`);
-      await refreshUser();
-      navigate('/');
-    } catch {
-      setMessage({ text: 'Failed to delete campaign.', type: 'error' });
     }
   };
 
@@ -347,7 +331,9 @@ export default function CampaignDetail() {
           if (extra && typeof extra === 'object') {
             Object.keys(extra).forEach(k => keys.add(k.trim().toLowerCase()));
           }
-        } catch (e) {}
+        } catch {
+          // Ignore invalid JSON in extra_data
+        }
       }
     });
     return Array.from(keys);

@@ -25,7 +25,7 @@ export default function TrialExpiredModal({ onSignOut }) {
         background: 'var(--card)',
         border: '1px solid var(--border-glass)',
         borderRadius: '16px',
-        boxShadow: 'var(--shadow-lg), 0 0 40px rgba(99, 102, 241, 0.1)',
+        boxShadow: 'var(--shadow-lg), 0 0 40px var(--accent-glow)',
         padding: '38px',
         textAlign: 'center',
         animation: 'scaleIn 0.3s var(--ease-spring)'
@@ -80,7 +80,7 @@ export default function TrialExpiredModal({ onSignOut }) {
               fontWeight: 700,
               width: '100%',
               justifyContent: 'center',
-              boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+              boxShadow: '0 4px 14px var(--accent-glow)'
             }}
           >
             Upgrade to Pro →

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../App';
 import logoLight from '../assets/logo-light.png';
@@ -13,6 +13,10 @@ export default function Login() {
   const { login, theme, toggleTheme } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
+
+  useEffect(() => {
+    document.title = 'Sign In - ColdOutreach';
+  }, []);
   const searchParams = new URLSearchParams(location.search);
   const registered = searchParams.get('registered') === '1';
 

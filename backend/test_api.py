@@ -575,6 +575,103 @@ def run_tests():
     
     print("Admin Panel Endpoints OK.")
     
+    # 13. Test AI Template Generation System & Library CRUD
+    print("Testing AI Template Generation System Endpoint...")
+    # Update test user's plan to pro so they can access AI Template Generator
+    db = SessionLocal()
+    tu = db.query(User).filter(User.email == test_email).first()
+    tu.plan = "pro"
+    db.commit()
+    db.close()
+
+    # Refresh token to obtain pro plan scopes
+    login_response_pro = client.post(
+        "/api/auth/login",
+        data={"username": test_email, "password": "password123"}
+    )
+    headers_pro = {"Authorization": f"Bearer {login_response_pro.json()['access_token']}"}
+
+    gen_res = client.post(
+        "/api/ai/generate-email",
+        headers=headers_pro,
+        json={
+            "role": "Founder",
+            "objective": "Sell cold outreach software",
+            "target_audience": "Lead generation agencies",
+            "skills_or_offer": "Outbound emailing platform scaling automatically",
+            "tone": "startup-style",
+            "length": "medium",
+            "formality": "informal",
+            "cta_strength": "soft",
+            "writing_style": "conversational",
+            "sender_name": "Test Founder"
+        }
+    )
+    # Note: Groq call might fail if API key is not configured, but if it runs, let's assert.
+    # To prevent tests failing in environment without API keys, we skip Groq assertions if key is missing.
+    api_key_configured = bool(os.getenv("GROQ_API_KEY"))
+    if api_key_configured:
+        assert gen_res.status_code == 200
+        gen_json = gen_res.json()
+        assert "subjects" in gen_json
+        assert len(gen_json["subjects"]) == 3
+        assert "variations" in gen_json
+        assert len(gen_json["variations"]) == 3
+        assert "variables" in gen_json
+        print("AI Template Generation Endpoint OK.")
+    else:
+        print("Groq API key missing. Skipped Groq API live assertions.")
+
+    print("Testing Template Library CRUD...")
+    # Create template
+    create_res = client.post(
+        "/api/templates",
+        headers=headers_pro,
+        json={
+            "name": "My Sales Pitch Template",
+            "subject": "Quick question for {{company}}",
+            "body": "Hi {{first_name}},\n\nThis is a pitch from {{sender_name}}.",
+            "variables": ["company", "first_name", "sender_name"]
+        }
+    )
+    assert create_res.status_code == 200
+    template_id = create_res.json()["template_id"]
+
+    # List templates
+    list_res = client.get("/api/templates", headers=headers_pro)
+    assert list_res.status_code == 200
+    templates_list = list_res.json()
+    assert len(templates_list) >= 1
+    assert templates_list[0]["id"] == template_id
+    assert templates_list[0]["name"] == "My Sales Pitch Template"
+    assert "company" in templates_list[0]["variables"]
+
+    # Update template
+    update_res = client.put(
+        f"/api/templates/{template_id}",
+        headers=headers_pro,
+        json={
+            "name": "My Updated Pitch Template",
+            "subject": "Quick query for {{company}}",
+            "body": "Hi {{first_name}},\n\nThis is an updated pitch.",
+            "variables": ["company", "first_name"]
+        }
+    )
+    assert update_res.status_code == 200
+
+    # Verify update
+    list_res2 = client.get("/api/templates", headers=headers_pro)
+    assert list_res2.json()[0]["name"] == "My Updated Pitch Template"
+
+    # Delete template
+    delete_res = client.delete(f"/api/templates/{template_id}", headers=headers_pro)
+    assert delete_res.status_code == 200
+
+    # Verify delete
+    list_res3 = client.get("/api/templates", headers=headers_pro)
+    assert not any(t["id"] == template_id for t in list_res3.json())
+    print("Template Library CRUD OK.")
+
     # Clean up test user
     db = SessionLocal()
     user = db.query(User).filter(User.email == test_email).first()

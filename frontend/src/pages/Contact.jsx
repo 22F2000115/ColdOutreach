@@ -19,6 +19,7 @@ export default function Contact() {
   };
 
   useEffect(() => {
+    document.title = 'Contact Support - ColdOutreach';
     fetchContacts();
   }, []);
 

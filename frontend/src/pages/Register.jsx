@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../App';
 import logoLight from '../assets/logo-light.png';
@@ -14,6 +14,10 @@ export default function Register() {
   const [success,         setSuccess]         = useState(false);
   const [loading,         setLoading]         = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = 'Create Account - ColdOutreach';
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

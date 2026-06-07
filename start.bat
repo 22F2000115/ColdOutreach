@@ -69,16 +69,16 @@ echo.
 echo  All checks passed. Launching servers ...
 echo.
 
-:: Launch backend via helper script (avoids command-line length limits)
+:: Launch backend in its own window
 echo  [1/2] Starting FastAPI backend on http://localhost:8000 ...
-start "ColdOutreach Backend" cmd /k ""%BACKEND%\_launch.bat""
+start "ColdOutreach Backend" cmd /k "cd /d "%BACKEND%" && "%BACKEND%\venv\Scripts\uvicorn.exe" main:app --reload --host 127.0.0.1 --port 8000"
 
 :: Give the backend a 2-second head start
 timeout /t 2 /nobreak >nul
 
-:: Launch frontend via helper script
+:: Launch frontend in its own window
 echo  [2/2] Starting Vite frontend on http://localhost:5173 ...
-start "ColdOutreach Frontend" cmd /k ""%FRONTEND%\_launch.bat""
+start "ColdOutreach Frontend" cmd /k "cd /d "%FRONTEND%" && npm run dev"
 
 echo.
 echo  =======================================================================

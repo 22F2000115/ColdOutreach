@@ -23,6 +23,7 @@ class User(Base):
     smtp_accounts = relationship("SMTPSettings", back_populates="user", cascade="all, delete-orphan")
     campaigns = relationship("Campaign", back_populates="user", cascade="all, delete-orphan")
     activity_logs = relationship("ActivityLog", back_populates="user", cascade="all, delete-orphan")
+    templates = relationship("Template", back_populates="user", cascade="all, delete-orphan")
 
 
 
@@ -118,6 +119,20 @@ class ActivityLog(Base):
 
     # Relationships
     user = relationship("User", back_populates="activity_logs")
+
+
+class Template(Base):
+    __tablename__ = "templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    variables = Column(String, nullable=True)  # JSON-encoded array of variable keys
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
+
+    user = relationship("User", back_populates="templates")
 
 
 
