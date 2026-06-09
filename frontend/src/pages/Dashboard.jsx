@@ -32,22 +32,24 @@ function StatusBadge({ status }) {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user, refreshUser } = useAuth();
-  const [campaigns, setCampaigns] = useState([]);
-  const [senders,   setSenders]   = useState([]);
-  const [loading,   setLoading]   = useState(true);
 
-  const [showModal, setShowModal]   = useState(false);
+  // useState hooks
+  const [campaigns, setCampaigns] = useState([]);
+  const [senders, setSenders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [name,      setName]        = useState('');
-  const [subject,   setSubject]     = useState('');
-  const [body,      setBody]        = useState('<p>Hi,</p><p>I noticed what your company <strong>{{company}}</strong> is doing and wanted to reach out.</p>');
+  const [name, setName] = useState('');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('<p>Hi,</p><p>I noticed what your company <strong>{{company}}</strong> is doing and wanted to reach out.</p>');
   const [selectedSenderId, setSelectedSenderId] = useState('');
-  const [csvFile,   setCsvFile]     = useState(null);
+  const [csvFile, setCsvFile] = useState(null);
   const [attachmentFile, setAttachmentFile] = useState(null);
   const [attachmentDisplayName, setAttachmentDisplayName] = useState('');
-  const [creating,  setCreating]    = useState(false);
-  const [error,     setError]       = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
+  // Derived values/variables
   const userPlan = user?.plan || 'trial';
   const campaignLimit = user?.limits?.max_campaigns ?? PLAN_LIMITS[userPlan].max_campaigns;
   const isAtCampaignLimit = campaigns.length >= campaignLimit;
@@ -57,38 +59,13 @@ export default function Dashboard() {
   const isEditQuotaReached = !isAdmin && user?.usage && user?.quotas && user.usage.edit >= user.quotas.edit;
   const isDeleteQuotaReached = !isAdmin && user?.usage && user?.quotas && user.usage.delete >= user.quotas.delete;
 
-  const handleOpenCreateModal = () => {
-    if (isAddQuotaReached) {
-      alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
-      return;
-    }
-    if (isAtCampaignLimit) {
-      alert(`Campaign limit reached (${campaignLimit} allowed on ${userPlan} plan). Please upgrade to add more.`);
-      return;
-    }
-    setShowModal(true);
-  };
+  const totalSent   = campaigns.reduce((a, c) => a + c.stats.sent,   0);
+  const totalFailed = campaigns.reduce((a, c) => a + c.stats.failed, 0);
+  const totalEmails = campaigns.reduce((a, c) => a + c.stats.total,  0);
 
-
-  const fetchCampaigns = async () => {
-    try {
-      const [campRes, sendRes] = await Promise.all([
-        api.get('/api/campaigns'),
-        api.get('/api/settings/smtp'),
-      ]);
-      setCampaigns(campRes.data || []);
-      const list = sendRes.data || [];
-      setSenders(list);
-      if (list.length > 0 && !selectedSenderId) setSelectedSenderId(list[0].id);
-      await refreshUser();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // useEffect hooks
   useEffect(() => {
+    // Empty dependency array: set title, fetch campaigns and start background poll interval once on mount
     document.title = 'Dashboard - ColdOutreach';
     fetchCampaigns();
     const t = setInterval(async () => {
@@ -105,6 +82,37 @@ export default function Dashboard() {
     };
   }, []);
 
+  // Handler and helper functions
+  const handleOpenCreateModal = () => {
+    if (isAddQuotaReached) {
+      alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
+      return;
+    }
+    if (isAtCampaignLimit) {
+      alert(`Campaign limit reached (${campaignLimit} allowed on ${userPlan} plan). Please upgrade to add more.`);
+      return;
+    }
+    setShowModal(true);
+  };
+
+  const fetchCampaigns = async () => {
+    try {
+      const [campRes, sendRes] = await Promise.all([
+        api.get('/api/campaigns'),
+        api.get('/api/settings/smtp'),
+      ]);
+      setCampaigns(campRes.data || []);
+      const list = sendRes.data || [];
+      setSenders(list);
+      if (list.length > 0 && !selectedSenderId) setSelectedSenderId(list[0].id);
+      await refreshUser();
+    } catch (e) {
+      // Failed to fetch campaigns silently
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const resetModal = () => {
     setName(''); setSubject('');
     setBody('<p>Hi,</p><p>I noticed what your company <strong>{company}</strong> is doing and wanted to reach out.</p>');
@@ -117,7 +125,7 @@ export default function Dashboard() {
     setError('');
     if (!selectedSenderId) { setError('Please select a sender account first.'); return; }
 
-    setCreating(true);
+    setSubmitting(true);
     const fd = new FormData();
     fd.append('name', name);
     fd.append('subject_template', subject);
@@ -137,9 +145,9 @@ export default function Dashboard() {
       // Redirect to the new campaign so user can add contacts there
       navigate(`/campaigns/${res.data.campaign_id}`);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to create campaign');
+      setError(err.response?.data?.detail || 'Something went wrong. Please try again.');
     } finally {
-      setCreating(false);
+      setSubmitting(false);
     }
   };
 
@@ -155,7 +163,7 @@ export default function Dashboard() {
       await refreshUser();
       fetchCampaigns();
     } catch {
-      alert('Failed to delete campaign');
+      alert('Something went wrong. Please try again.');
     }
   };
 
@@ -167,13 +175,9 @@ export default function Dashboard() {
       await api.post(`/api/campaigns/${id}/action`, fd);
       fetchCampaigns();
     } catch (err) {
-      alert(err.response?.data?.detail || `Failed to ${action} campaign`);
+      alert(err.response?.data?.detail || 'Something went wrong. Please try again.');
     }
   };
-
-  const totalSent   = campaigns.reduce((a, c) => a + c.stats.sent,   0);
-  const totalFailed = campaigns.reduce((a, c) => a + c.stats.failed, 0);
-  const totalEmails = campaigns.reduce((a, c) => a + c.stats.total,  0);
 
   return (
     <div style={{ animation: 'slideUp 0.3s var(--ease-smooth)' }}>
@@ -217,17 +221,17 @@ export default function Dashboard() {
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             {user?.plan !== 'pro' && (
-              <button 
+              <button
                 onClick={() => navigate('/contact')}
-                className="btn btn-primary" 
+                className="btn btn-primary"
                 style={{ padding: '6px 12px', fontSize: '0.8rem', height: '30px' }}
               >
                 Upgrade to Pro
               </button>
             )}
-            <Link 
-              to="/contact" 
-              className="btn btn-secondary" 
+            <Link
+              to="/contact"
+              className="btn btn-secondary"
               style={{ padding: '6px 12px', fontSize: '0.8rem', height: '30px', display: 'inline-flex', alignItems: 'center' }}
             >
               Contact Us
@@ -239,9 +243,9 @@ export default function Dashboard() {
       {/* Stat Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px', marginBottom: '32px' }}>
         {[
-          { 
-            label: 'Total Campaigns', 
-            value: campaigns.length, 
+          {
+            label: 'Total Campaigns',
+            value: campaigns.length,
             color: 'var(--stat-total)',
             icon: (
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -252,9 +256,9 @@ export default function Dashboard() {
               </svg>
             )
           },
-          { 
-            label: 'Emails Enqueued', 
-            value: totalEmails,       
+          {
+            label: 'Emails Enqueued',
+            value: totalEmails,
             color: 'var(--stat-enqueued)',
             icon: (
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -263,9 +267,9 @@ export default function Dashboard() {
               </svg>
             )
           },
-          { 
-            label: 'Delivered',        
-            value: totalSent,          
+          {
+            label: 'Delivered',
+            value: totalSent,
             color: 'var(--stat-delivered)',
             icon: (
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -274,9 +278,9 @@ export default function Dashboard() {
               </svg>
             )
           },
-          { 
-            label: 'Failures',          
-            value: totalFailed,        
+          {
+            label: 'Failures',
+            value: totalFailed,
             color: 'var(--stat-failures)',
             icon: (
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -287,16 +291,16 @@ export default function Dashboard() {
             )
           },
         ].map(({ label, value, color, icon }) => (
-          <div 
-            className="metric-card" 
-            key={label} 
-            style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center', 
-              background: `color-mix(in srgb, ${color} 8%, var(--bg-card))`, 
-              border: 'none', 
-              boxShadow: 'var(--shadow-sm)' 
+          <div
+            className="metric-card"
+            key={label}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: `color-mix(in srgb, ${color} 8%, var(--bg-card))`,
+              border: 'none',
+              boxShadow: 'var(--shadow-sm)'
             }}
           >
             <div>
@@ -358,7 +362,7 @@ export default function Dashboard() {
                 {/* 1. Name & Sender */}
                 <div style={{ flex: '1.2', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   {isEditQuotaReached ? (
-                    <span 
+                    <span
                       style={{ fontFamily: 'var(--font-header)', fontWeight: 800, fontSize: '1.22rem', color: 'var(--muted-foreground)', display: 'block', marginBottom: '6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', cursor: 'not-allowed' }}
                       title="Edit quota reached"
                       onClick={() => alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.")}
@@ -446,8 +450,8 @@ export default function Dashboard() {
                     </button>
                   )}
                   {isEditQuotaReached ? (
-                    <button 
-                      className="btn btn-secondary" 
+                    <button
+                      className="btn btn-secondary"
                       style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: 0.6, cursor: 'not-allowed' }}
                       onClick={(e) => {
                         e.preventDefault();
@@ -470,7 +474,7 @@ export default function Dashboard() {
                       Edit
                     </Link>
                   )}
-                  
+
                   <button
                     className="btn btn-secondary"
                     onClick={(e) => handleDelete(c.id, e)}
@@ -598,8 +602,8 @@ export default function Dashboard() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-                  <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={creating}>
-                    {creating ? 'Creating…' : 'Create Campaign →'}
+                  <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={submitting}>
+                    {submitting ? 'Creating…' : 'Create Campaign →'}
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={() => { resetModal(); setShowModal(false); }}>
                     Cancel

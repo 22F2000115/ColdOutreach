@@ -14,28 +14,30 @@ ColdOutreach lets you run personalized cold email campaigns from your own machin
 
 **Campaign Management**
 - Create, start, pause, resume, and delete campaigns from a central dashboard
-- Live delivery tracking — sent, delivered, bounced, and failed counts updated in real time
+- Live delivery tracking - sent, delivered, bounced, and failed counts updated in real time
 - Auto-retry mechanism for transient SMTP failures
 - Campaign worker locks prevent race conditions during concurrent send operations
 
 **SMTP and Email**
-- Connect any SMTP server — Gmail, Outlook, custom domains
-- Gmail App Password support with connection testing before saving
+- Connect any SMTP server - Gmail, Outlook, custom domains
+- Fully editable Gmail App Password and address fields with connection testing before saving
 - SMTP passwords encrypted at rest using Fernet symmetric cryptography
 - Attachment support per campaign
+- Custom send delay (1-60 seconds) per SMTP account to adjust pacing between outgoing emails
 
 **Lead Management**
 - Import contacts via CSV upload (up to 6 MB)
-- Add contacts individually
+- Add contacts individually with strict email regex validation
 - Personalization placeholders: `{{first_name}}`, `{{last_name}}`, `{{email}}`, `{{company}}`, `{{role}}`
 
 **Bounce Sync**
 - Connect sender accounts via IMAP
-- Scan inboxes and mark bounced records automatically in a single database transaction
+- Scan inboxes and mark bounced records automatically as non-blocking background tasks
 
 **Outreach AI (Pro Plan)**
 - AI email generator powered by Groq (`llama-3.3-70b-versatile`)
 - Generates multiple subject line options and three full email variations per request
+- Rate limited dynamically (15 requests/hour for trial tier, 20 requests/hour for pro tier)
 - Controls: tone, writing style, email length, formality level, CTA strength
 - Quick-start presets for Job Seeker, SaaS Pitch, Freelancer, B2B Sales
 - Spam phrase detection with flagged word highlighting
@@ -44,7 +46,7 @@ ColdOutreach lets you run personalized cold email campaigns from your own machin
 - Inject templates directly into draft campaigns
 
 **Activity History**
-- Per-user action log — campaign runs, sends, SMTP changes, plan updates
+- Per-user action log - campaign runs, sends, SMTP changes, plan updates
 - Filter by event type and date range
 - CSV export
 
@@ -53,18 +55,20 @@ ColdOutreach lets you run personalized cold email campaigns from your own machin
 - 1-hour access tokens with silent rotation
 - HTTP-only refresh cookies (7-day duration)
 - Rate limiting on login (10/min) and registration (5/min) endpoints
+- Secure change password modal with current password verification, length checks, and matching validations
 
 **Admin Panel**
-- System stats overview — users, campaigns, daily email volume
-- User management — search, promote, change plan, suspend, delete
-- Global campaign log with ownership records
-- Live plan limit editor — adjust SMTP and campaign quotas per tier
+- System stats overview - users, campaigns, daily email volume
+- User management - search, promote, change plan, suspend, delete with server-side pagination
+- Global campaign log with ownership records and server-side pagination
+- Live plan limit editor - adjust SMTP, campaign, and recipient quotas per tier stored in database
 - Support contact configuration
 
 **UI**
 - Full dark and light mode with persistent preference
-- Responsive layout — desktop and mobile
+- Responsive layout - desktop and mobile
 - Theme-adaptive component styling using CSS custom properties
+- Unified sidebar user profile card at the bottom displaying user initials avatar, email, plan badge (Pro/Trial), and action buttons for Change Password and Sign Out
 
 ---
 
@@ -87,14 +91,26 @@ ColdOutreach lets you run personalized cold email campaigns from your own machin
 ```
 ColdOutreach/
 ├── backend/
-│   ├── main.py              -- FastAPI application, all routes and middleware
+│   ├── main.py              -- FastAPI application startup and middleware registration
 │   ├── models.py            -- SQLAlchemy ORM models
 │   ├── auth.py              -- JWT token creation and validation
-│   ├── worker.py            -- Background campaign sending threads
+│   ├── worker.py            -- Background campaign sending threads and IMAP sync
 │   ├── security.py          -- Fernet encryption helpers for SMTP passwords
 │   ├── activity.py          -- Activity log writer utility
 │   ├── database.py          -- SQLAlchemy engine and session setup
-│   ├── config.py            -- Plan tier limits and global constants
+│   ├── config.py            -- Configuration constants
+│   ├── schemas.py           -- Pydantic validation schemas
+│   ├── seed.py              -- Database seeders for defaults
+│   ├── dependencies.py      -- FastAPI dependencies, database helpers, and rate limiter definitions
+│   ├── routers/             -- Modular APIRouter endpoint controllers
+│   │   ├── auth.py          -- Auth and profile endpoints
+│   │   ├── smtp.py          -- SMTP CRUD and testing endpoints
+│   │   ├── campaigns.py     -- Campaign CRUD and recipient management
+│   │   ├── ai.py            -- Google Gemini and Groq AI template generation
+│   │   ├── templates.py     -- Saved email template library endpoints
+│   │   ├── activity.py      -- User logs and metrics
+│   │   ├── admin.py         -- Server-side paginated admin endpoints
+│   │   └── contact.py       -- Contact and CSV details
 │   ├── alembic.ini          -- Alembic migration configuration
 │   ├── alembic/             -- Migration version scripts
 │   ├── requirements.txt     -- Python package dependencies
@@ -107,15 +123,16 @@ ColdOutreach/
 │   │   │   ├── Register.jsx           -- Account registration page
 │   │   │   ├── Dashboard.jsx          -- Campaigns overview and stats
 │   │   │   ├── CampaignDetail.jsx     -- Campaign editor, contacts, and worker panel
-│   │   │   ├── Settings.jsx           -- SMTP sender account configuration
+│   │   │   ├── Settings.jsx           -- SMTP sender account configuration with send delays
 │   │   │   ├── OutreachAI.jsx         -- AI template generator and library
 │   │   │   ├── History.jsx            -- Activity log timeline and CSV export
 │   │   │   ├── Contact.jsx            -- Support and plan upgrade page
-│   │   │   └── AdminDashboard.jsx     -- Admin control panel
+│   │   │   └── AdminDashboard.jsx     -- Admin control panel with server-side pagination
 │   │   ├── components/
 │   │   │   ├── RichEditor.jsx         -- WYSIWYG template editor
 │   │   │   ├── FailedContactsTab.jsx  -- Failed delivery retry log
-│   │   │   └── TrialExpiredModal.jsx  -- Plan restriction overlay
+│   │   │   ├── TrialExpiredModal.jsx  -- Plan restriction overlay
+│   │   │   └── ChangePasswordModal.jsx -- Overlay modal for updating user passwords
 │   │   ├── App.jsx          -- Router configuration and sidebar layout
 │   │   ├── main.jsx         -- React render entry point
 │   │   └── index.css        -- Global design tokens and component styles
@@ -307,7 +324,7 @@ Open the History page to see a chronological log of all account actions. Filter 
 
 **9. Sync bounces**
 
-On the History page, click Sync Bounces to scan your sender mailboxes via IMAP and automatically mark bounced contacts.
+A background task automatically runs every 30 minutes to check all active campaigns for bounces via IMAP and mark bounced contacts. You can also trigger this check manually at any time by clicking Sync Bounces on the History page or the Campaign details page.
 
 ---
 
@@ -315,8 +332,8 @@ On the History page, click Sync Bounces to scan your sender mailboxes via IMAP a
 
 | Feature | Trial | Pro |
 |---|---|---|
-| SMTP Accounts | 1 | 10 |
-| Campaigns | 3 | 50 |
+| SMTP Accounts | 1 | 3 |
+| Campaigns | 3 | Unlimited |
 | Outreach AI | Locked | Unlocked |
 | Duration | 30 days | Unlimited |
 

@@ -1,30 +1,37 @@
+/**
+ * Contact Page
+ * Renders support contact details (Email, WhatsApp) configured by administration.
+ */
+
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../App';
 
 export default function Contact() {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
+
+  const emails = contacts.filter(c => c.type === 'email');
+  const whatsapps = contacts.filter(c => c.type === 'whatsapp');
+
+  useEffect(() => {
+    document.title = 'Contact Support - ColdOutreach';
+    fetchContacts();
+    // Empty dependency array ensures contact details are only loaded once on component mount
+  }, []);
 
   const fetchContacts = async () => {
     try {
       const res = await api.get('/api/contact-details');
       setContacts(res.data || []);
     } catch (err) {
-      console.error(err);
-      setError('Failed to fetch contact details. Please try again later.');
+      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    document.title = 'Contact Support - ColdOutreach';
-    fetchContacts();
-  }, []);
-
-  const emails = contacts.filter(c => c.type === 'email');
-  const whatsapps = contacts.filter(c => c.type === 'whatsapp');
 
   if (loading) {
     return (
@@ -52,7 +59,7 @@ export default function Contact() {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '28px', marginTop: '12px' }}>
-        
+
         {/* Email Card */}
         <div className="card" style={{ padding: '28px', display: 'flex', flexDirection: 'column', gap: '20px', transition: 'transform 0.2s var(--ease-spring)', boxShadow: 'var(--shadow-md)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -131,12 +138,12 @@ export default function Contact() {
       </div>
 
       {/* Footer / FAQ Note */}
-      <div style={{ 
-        marginTop: '48px', 
-        textAlign: 'center', 
-        padding: '24px', 
-        background: 'var(--bg-secondary)', 
-        borderRadius: 'var(--radius)', 
+      <div style={{
+        marginTop: '48px',
+        textAlign: 'center',
+        padding: '24px',
+        background: 'var(--bg-secondary)',
+        borderRadius: 'var(--radius)',
         border: '1px solid var(--border-subtle)',
         display: 'flex',
         flexDirection: 'column',
@@ -147,7 +154,7 @@ export default function Contact() {
           Typical response time: under 24 hours
         </p>
         <p style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', margin: 0 }}>
-          Check our <a href="#" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }} onClick={(e) => { e.preventDefault(); alert("FAQ & Help Center coming soon!"); }}>FAQ & Help Center</a> for quick self-help guides.
+          Check our <a href="#" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }} onClick={(e) => { e.preventDefault(); navigate('/faq'); }}>FAQ & Help Center</a> for quick self-help guides.
         </p>
       </div>
     </div>

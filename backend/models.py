@@ -1,6 +1,8 @@
 import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
+
 from database import Base
 
 class User(Base):
@@ -38,6 +40,7 @@ class SMTPSettings(Base):
     encrypted_password = Column(String, nullable=False)
     from_name = Column(String, nullable=False)
     from_email = Column(String, nullable=False)
+    send_delay_seconds = Column(Integer, default=3, nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="smtp_accounts")
@@ -105,6 +108,7 @@ class PlanQuota(Base):
     save_limit = Column(Integer, default=999999, nullable=False)
     max_smtp_accounts = Column(Integer, default=1, nullable=False)
     max_campaigns = Column(Integer, default=3, nullable=False)
+    max_recipients_per_campaign = Column(Integer, default=999999, nullable=False)
 
 
 class ActivityLog(Base):
@@ -133,6 +137,3 @@ class Template(Base):
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
 
     user = relationship("User", back_populates="templates")
-
-
-

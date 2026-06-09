@@ -1,9 +1,23 @@
+// App entry point setting up routes, theme provider, auth contexts, and common layouts.
 import { createContext, useContext, useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+
 import TrialExpiredModal from './components/TrialExpiredModal';
+import ChangePasswordModal from './components/ChangePasswordModal';
 import logoLight from './assets/logo-light.png';
 import logoDark from './assets/logo-dark.png';
+
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+import Settings from './pages/Settings';
+import CampaignDetail from './pages/CampaignDetail';
+import AdminDashboard from './pages/AdminDashboard';
+import Contact from './pages/Contact';
+import OutreachAI from './pages/OutreachAI';
+import History from './pages/History';
+import FAQ from './pages/FAQ';
 
 // Create API Client instance
 export const api = axios.create({ baseURL: '' });
@@ -32,21 +46,21 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    
+
     // Check for 402 Trial Expired
     if (error.response?.status === 402) {
       setTrialExpiredGlobal(true);
       return Promise.reject(error);
     }
-    
+
     // Check for 401 Unauthorized
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (originalRequest.url === '/api/auth/refresh' || originalRequest.url === '/api/auth/login') {
         return Promise.reject(error);
       }
-      
+
       originalRequest._retry = true;
-      
+
       if (!isRefreshing) {
         isRefreshing = true;
         try {
@@ -63,7 +77,7 @@ api.interceptors.response.use(
           return Promise.reject(err);
         }
       }
-      
+
       return new Promise((resolve) => {
         subscribeTokenRefresh((token) => {
           originalRequest.headers.Authorization = `Bearer ${token}`;
@@ -71,7 +85,7 @@ api.interceptors.response.use(
         });
       });
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -81,6 +95,7 @@ const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 function AuthProvider({ children }) {
+  // useState hooks
   const [user, setUser] = useState(null);
   const [trialExpired, setTrialExpired] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -90,6 +105,66 @@ function AuthProvider({ children }) {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
 
+  // useEffect hooks
+  useEffect(() => {
+    // Empty dependency array: run once on mount to wire up global state hooks for Axios interceptor callbacks
+    setTrialExpiredGlobal = setTrialExpired;
+    logoutGlobal = logout;
+  }, []);
+
+  useEffect(() => {
+    // Empty dependency array: run once on mount to perform initial authentication check from local storage token
+    const initUser = async () => {
+      await fetchUser();
+      setLoading(false);
+    };
+    initUser();
+  }, []);
+
+  useEffect(() => {
+    // Empty dependency array: setup event listener once on mount to check token status when user tab switches back to visible
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && localStorage.getItem('token')) {
+        fetchUser();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
+  useEffect(() => {
+    // Empty dependency array: setup event listener once on mount to poll server when window gains focus
+    const handleFocus = () => {
+      if (localStorage.getItem('token')) {
+        fetchUser();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      if (localStorage.getItem('token')) {
+        fetchUser();
+      }
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [user]);
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.documentElement.removeAttribute('data-theme');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  // Handler and helper functions
   const logout = async () => {
     try {
       await api.post('/api/auth/logout');
@@ -120,63 +195,6 @@ function AuthProvider({ children }) {
   const refreshUser = async () => {
     return await fetchUser();
   };
-
-  useEffect(() => {
-    setTrialExpiredGlobal = setTrialExpired;
-    logoutGlobal = logout;
-  }, []);
-
-  useEffect(() => {
-    const initUser = async () => {
-      await fetchUser();
-      setLoading(false);
-    };
-    initUser();
-  }, []);
-
-  // Sync limits/status automatically on tab visibility changes
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && localStorage.getItem('token')) {
-        fetchUser();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
-
-  // Sync limits/status automatically on window focus changes
-  useEffect(() => {
-    const handleFocus = () => {
-      if (localStorage.getItem('token')) {
-        fetchUser();
-      }
-    };
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, []);
-
-  // Safety poll every 5 minutes for idle sessions
-  useEffect(() => {
-    if (!user) return;
-    const interval = setInterval(() => {
-      if (localStorage.getItem('token')) {
-        fetchUser();
-      }
-    }, 5 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [user]);
-
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-      document.documentElement.setAttribute('data-theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      document.documentElement.removeAttribute('data-theme');
-    }
-    localStorage.setItem('theme', theme);
-  }, [theme]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
@@ -222,13 +240,15 @@ function AdminRoute({ children }) {
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== 'admin') return <Navigate to="/" replace />;
   return children;
-}function AppLayout({ children }) {
+}
+
+function AppLayout({ children }) {
   const { logout, user, theme, toggleTheme } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showProModal, setShowProModal] = useState(false);
-
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -298,91 +318,18 @@ function AdminRoute({ children }) {
         <aside className={`sidebar${mobileMenuOpen ? ' mobile-open' : ''}`} style={{ gap: '0' }}>
           {/* Brand */}
           <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '4px', gap: '8px', marginBottom: '24px' }}>
-            <img 
-              src={theme === 'dark' ? logoDark : logoLight} 
-              alt="ColdOutreach Logo" 
-              style={{ height: '26px', width: 'auto', display: 'block', objectFit: 'contain' }} 
+            <img
+              src={theme === 'dark' ? logoDark : logoLight}
+              alt="ColdOutreach Logo"
+              style={{ height: '26px', width: 'auto', display: 'block', objectFit: 'contain' }}
             />
             <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.25rem', fontWeight: 900, color: 'var(--foreground)', letterSpacing: '-0.02em', lineHeight: 1, transform: 'translateY(2px)' }}>
               <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'var(--logo-dark)' }}>Outreach</span>
             </div>
           </div>
 
-          {/* User Profile Card */}
-          {user && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '4px 8px 16px 8px',
-              background: 'transparent',
-              border: 'none',
-              boxShadow: 'none'
-            }}>
-              <div style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                background: 'var(--primary)',
-                color: 'var(--primary-foreground)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 800,
-                fontSize: '0.82rem',
-                letterSpacing: '0.05em',
-                boxShadow: 'var(--shadow-sm)',
-                flexShrink: 0
-              }}>
-                {user.email ? user.email.split('@')[0].substring(0, 2).toUpperCase() : 'U'}
-              </div>
-              <div style={{ minWidth: 0, flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <div 
-                  style={{ 
-                    fontSize: '0.82rem', 
-                    fontWeight: 600, 
-                    color: theme === 'dark' ? '#E2E8F0' : '#374151', 
-                    overflow: 'hidden', 
-                    textOverflow: 'ellipsis', 
-                    whiteSpace: 'nowrap' 
-                  }}
-                  title={user.email}
-                >
-                  {user.email || 'User'}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <span 
-                    className={`plan-badge plan-badge--${
-                      user.role === 'admin' ? 'admin'
-                      : user.plan === 'pro' ? 'pro'
-                      : user.plan === 'trial' ? 'trial'
-                      : 'free'
-                    }`}
-                    style={{ 
-                      fontSize: '0.55rem', 
-                      padding: '2px 6px', 
-                      borderRadius: '3px',
-                      fontWeight: 800,
-                      letterSpacing: '0.05em',
-                      ...getSidebarBadgeStyle(user.role, user.plan, theme === 'dark')
-                    }}
-                  >
-                    {user.role === 'admin' ? 'Admin' : user.plan === 'pro' ? 'Pro' : user.plan === 'trial' ? 'Trial' : 'Free'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* Divider below user info block */}
-          {user && (
-            <div style={{ 
-              height: '1px', 
-              background: theme === 'dark' ? '#2D2D3D' : '#E5E7EB', 
-              marginBottom: '16px' 
-            }} />
-          )}
-   
+
           {/* Nav */}
           <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <Link
@@ -448,6 +395,18 @@ function AdminRoute({ children }) {
             </Link>
 
             <Link
+              to="/faq"
+              className={`sidebar-nav-link${isActive('/faq') ? ' active' : ''}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              FAQ & Help
+            </Link>
+
+            <Link
               to="/contact"
               className={`sidebar-nav-link${isActive('/contact') ? ' active' : ''}`}
             >
@@ -474,22 +433,158 @@ function AdminRoute({ children }) {
 
           {/* Spacer */}
           <div style={{ flexGrow: 1 }} />
-   
+
           {/* Divider above Sign Out */}
           <div style={{ height: '1px', background: theme === 'dark' ? '#2D2D3D' : '#E5E7EB', marginBottom: '16px' }} />
-  
-          {/* Sign out */}
-          <button
-            onClick={handleLogout}
-            className="sidebar-signout-btn"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-              <polyline points="16 17 21 12 16 7"></polyline>
-              <line x1="21" y1="12" x2="9" y2="12"></line>
-            </svg>
-            Sign Out
-          </button>
+
+          {/* Account Block */}
+          {user && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '0 8px', marginBottom: '12px' }}>
+              {/* Profile Card */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '4px 8px',
+                background: 'transparent',
+                border: 'none',
+                boxShadow: 'none'
+              }}>
+                {/* Avatar */}
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: 'var(--primary)',
+                  color: 'var(--primary-foreground)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 800,
+                  fontSize: '0.82rem',
+                  letterSpacing: '0.05em',
+                  boxShadow: 'var(--shadow-sm)',
+                  flexShrink: 0
+                }}>
+                  {user.email ? user.email.split('@')[0].substring(0, 2).toUpperCase() : 'U'}
+                </div>
+                {/* Email and Plan Stack */}
+                <div style={{ minWidth: 0, flexGrow: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <div
+                    style={{
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      color: theme === 'dark' ? '#E2E8F0' : '#374151',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                    title={user.email}
+                  >
+                    {user.email || 'User'}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    <span
+                      className={`plan-badge plan-badge--${
+                        user.role === 'admin' ? 'admin'
+                        : user.plan === 'pro' ? 'pro'
+                        : user.plan === 'trial' ? 'trial'
+                        : 'free'
+                      }`}
+                      style={{
+                        fontSize: '0.55rem',
+                        padding: '2px 6px',
+                        borderRadius: '3px',
+                        fontWeight: 800,
+                        letterSpacing: '0.05em',
+                        ...getSidebarBadgeStyle(user.role, user.plan, theme === 'dark')
+                      }}
+                    >
+                      {user.role === 'admin' ? 'Admin' : user.plan === 'pro' ? 'Pro' : user.plan === 'trial' ? 'Trial' : 'Free'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons Stack */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowChangePasswordModal(true)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    height: '36px',
+                    borderRadius: 'var(--radius-btn)',
+                    color: theme === 'dark' ? '#A3A8C3' : '#6B7280',
+                    fontSize: '0.8rem',
+                    fontWeight: 500,
+                    transition: 'all 0.2s var(--ease-smooth)',
+                    cursor: 'pointer',
+                    background: 'transparent',
+                    border: 'none',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    textAlign: 'left'
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.background = 'var(--surface-hover)';
+                    e.currentTarget.style.color = theme === 'dark' ? '#FFFFFF' : '#111827';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.color = theme === 'dark' ? '#A3A8C3' : '#6B7280';
+                  }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                  </svg>
+                  Change Password
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    height: '36px',
+                    borderRadius: 'var(--radius-btn)',
+                    color: theme === 'dark' ? '#fca5a5' : '#EF4444',
+                    fontSize: '0.8rem',
+                    fontWeight: 500,
+                    transition: 'all 0.2s var(--ease-smooth)',
+                    cursor: 'pointer',
+                    background: 'transparent',
+                    border: 'none',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    textAlign: 'left',
+                    opacity: 0.85
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.opacity = '1';
+                    e.currentTarget.style.background = theme === 'dark' ? 'rgba(244, 63, 94, 0.1)' : 'rgba(239, 68, 68, 0.08)';
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.opacity = '0.85';
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                  </svg>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          )}
         </aside>
 
         {/* ── Main ── */}
@@ -549,19 +644,15 @@ function AdminRoute({ children }) {
           </div>
         </div>
       )}
+      {showChangePasswordModal && (
+        <ChangePasswordModal
+          isOpen={showChangePasswordModal}
+          onClose={() => setShowChangePasswordModal(false)}
+        />
+      )}
     </div>
   );
 }
-
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import Settings from './pages/Settings';
-import CampaignDetail from './pages/CampaignDetail';
-import AdminDashboard from './pages/AdminDashboard';
-import Contact from './pages/Contact';
-import OutreachAI from './pages/OutreachAI';
-import History from './pages/History';
 
 export default function App() {
   return (
@@ -574,6 +665,7 @@ export default function App() {
           <Route path="/outreach-ai" element={<ProtectedRoute><AppLayout><OutreachAI /></AppLayout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><AppLayout><Settings /></AppLayout></ProtectedRoute>} />
           <Route path="/contact"  element={<ProtectedRoute><AppLayout><Contact /></AppLayout></ProtectedRoute>} />
+          <Route path="/faq"      element={<ProtectedRoute><AppLayout><FAQ /></AppLayout></ProtectedRoute>} />
           <Route path="/history"  element={<ProtectedRoute><AppLayout><History /></AppLayout></ProtectedRoute>} />
           <Route path="/campaigns/:id" element={<ProtectedRoute><AppLayout><CampaignDetail /></AppLayout></ProtectedRoute>} />
           <Route path="/admin"    element={<AdminRoute><AppLayout><AdminDashboard /></AppLayout></AdminRoute>} />
@@ -583,4 +675,3 @@ export default function App() {
     </AuthProvider>
   );
 }
-

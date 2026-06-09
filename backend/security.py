@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+
 from cryptography.fernet import Fernet
 
 # Ensure .env file exists and contains an ENCRYPTION_KEY

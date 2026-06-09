@@ -1,3 +1,8 @@
+/**
+ * CampaignDetail page handles viewing campaign status, recipients list, templates,
+ * CSV uploads, and sync operations.
+ */
+
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api, useAuth } from '../App';
@@ -27,13 +32,15 @@ export default function CampaignDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, refreshUser } = useAuth();
-  const [campaign,    setCampaign]    = useState(null);
-  const [recipients,  setRecipients]  = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [actionLoad,  setActionLoad]  = useState(false);
-  const [message,     setMessage]     = useState({ text: '', type: '' });
-  const [activeTab,   setActiveTab]   = useState('all');
-  const [syncing,     setSyncing]     = useState(false);
+
+  // State hooks
+  const [campaign, setCampaign] = useState(null);
+  const [recipients, setRecipients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [submittingAction, setSubmittingAction] = useState(false);
+  const [message, setMessage] = useState({ text: '', type: '' });
+  const [activeTab, setActiveTab] = useState('all');
+  const [submittingSync, setSubmittingSync] = useState(false);
 
   // Outer section tabs & action states
   const [activeSection, setActiveSection] = useState('setup');
@@ -44,28 +51,67 @@ export default function CampaignDetail() {
   const pageSize = 10;
 
   // Template editing states
-  const [campName,    setCampName]    = useState('');
-  const [subject,     setSubject]     = useState('');
-  const [body,        setBody]        = useState('');
-  const [savingTemp,  setSavingTemp]  = useState(false);
+  const [campName, setCampName] = useState('');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [submittingTemplate, setSubmittingTemplate] = useState(false);
 
   // Inline recipient states
-  const [inlineEmail,   setInlineEmail]   = useState('');
+  const [inlineEmail, setInlineEmail] = useState('');
   const [inlineCompany, setInlineCompany] = useState('');
-  const [addingContact, setAddingContact] = useState(false);
+  const [submittingContact, setSubmittingContact] = useState(false);
 
   // CSV upload states
-  const [csvFile,      setCsvFile]      = useState(null);
-  const [csvMode,      setCsvMode]      = useState('append'); // 'append' or 'replace'
-  const [uploadingCsv, setUploadingCsv] = useState(false);
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvMode, setCsvMode] = useState('append'); // 'append' or 'replace'
+  const [submittingCsv, setSubmittingCsv] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
 
+  // Derived values/variables
   const isEditable = campaign ? (campaign.status === 'draft' || campaign.status === 'paused' || campaign.status === 'completed') : false;
-
   const isAdmin = user?.role === 'admin';
   const isDeleteQuotaReached = !isAdmin && user?.usage && user?.quotas && user.usage.delete >= user.quotas.delete;
   const isSaveQuotaReached = !isAdmin && user?.usage && user?.quotas && user.usage.save >= user.quotas.save;
 
+  // useEffect hooks
+  useEffect(() => {
+    fetchData();
+  }, [id]);
+
+  useEffect(() => {
+    if (!campaign || campaign.status !== 'running') return;
+    const t = setInterval(() => fetchData(true), 3000);
+    return () => clearInterval(t);
+  }, [campaign?.status]);
+
+  useEffect(() => {
+    if (campaign) {
+      document.title = `${campaign.name} - Campaign Details - ColdOutreach`;
+      setCampName(campaign.name);
+      setSubject(campaign.subject_template || '');
+      setBody(campaign.body_template || '');
+    }
+  }, [campaign]);
+
+  // Setup click listener on mount to handle closing the kebab menu when clicking outside
+  useEffect(() => {
+    const handleOutsideClick = () => {
+      setActiveKebabOpen(false);
+    };
+    document.addEventListener('click', handleOutsideClick);
+    return () => {
+      document.removeEventListener('click', handleOutsideClick);
+    };
+  }, []);
+
+  useEffect(() => {
+    const maxPage = Math.ceil(recipients.length / pageSize);
+    if (maxPage > 0 && currentPage > maxPage) {
+      setCurrentPage(maxPage);
+    }
+  }, [recipients.length, currentPage]);
+
+  // Handler and helper functions
   const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -100,7 +146,7 @@ export default function CampaignDetail() {
       }
       return JSON.stringify(detail);
     }
-    return err.message || fallback;
+    return err.response?.data?.detail || "Something went wrong. Please try again.";
   };
 
   const fetchData = async (isPolling = false) => {
@@ -112,49 +158,15 @@ export default function CampaignDetail() {
       setCampaign(campRes.data);
       setRecipients(recRes.data);
       await refreshUser();
-    } catch {
-      setMessage({ text: 'Campaign not found or access denied.', type: 'error' });
+    } catch (err) {
+      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, [id]);
-
-  useEffect(() => {
-    if (!campaign || campaign.status !== 'running') return;
-    const t = setInterval(() => fetchData(true), 3000);
-    return () => clearInterval(t);
-  }, [campaign?.status]);
-
-  useEffect(() => {
-    if (campaign) {
-      document.title = `${campaign.name} - Campaign Details - ColdOutreach`;
-      setCampName(campaign.name);
-      setSubject(campaign.subject_template || '');
-      setBody(campaign.body_template || '');
-    }
-  }, [campaign]);
-
-  useEffect(() => {
-    const handleOutsideClick = () => {
-      setActiveKebabOpen(false);
-    };
-    document.addEventListener('click', handleOutsideClick);
-    return () => {
-      document.removeEventListener('click', handleOutsideClick);
-    };
-  }, []);
-
-  useEffect(() => {
-    const maxPage = Math.ceil(recipients.length / pageSize);
-    if (maxPage > 0 && currentPage > maxPage) {
-      setCurrentPage(maxPage);
-    }
-  }, [recipients.length, currentPage]);
-
   const handleAction = async (action) => {
-    setActionLoad(true);
+    setSubmittingAction(true);
     setMessage({ text: '', type: '' });
     try {
       const fd = new FormData();
@@ -166,7 +178,7 @@ export default function CampaignDetail() {
     } catch (err) {
       setMessage({ text: getErrorMessage(err, `Failed to execute action: ${action}`), type: 'error' });
     } finally {
-      setActionLoad(false);
+      setSubmittingAction(false);
     }
   };
 
@@ -180,7 +192,7 @@ export default function CampaignDetail() {
       setMessage({ text: 'Campaign name and subject template are required.', type: 'error' });
       return;
     }
-    setSavingTemp(true);
+    setSubmittingTemplate(true);
     setMessage({ text: '', type: '' });
     try {
       const fd = new FormData();
@@ -197,7 +209,7 @@ export default function CampaignDetail() {
     } catch (err) {
       setMessage({ text: getErrorMessage(err, 'Failed to save template'), type: 'error' });
     } finally {
-      setSavingTemp(false);
+      setSubmittingTemplate(false);
     }
   };
 
@@ -207,7 +219,7 @@ export default function CampaignDetail() {
       setMessage({ text: 'Email address is required.', type: 'error' });
       return;
     }
-    setAddingContact(true);
+    setSubmittingContact(true);
     setMessage({ text: '', type: '' });
     try {
       const fd = new FormData();
@@ -221,7 +233,7 @@ export default function CampaignDetail() {
     } catch (err) {
       setMessage({ text: getErrorMessage(err, 'Failed to add recipient'), type: 'error' });
     } finally {
-      setAddingContact(false);
+      setSubmittingContact(false);
     }
   };
 
@@ -231,7 +243,7 @@ export default function CampaignDetail() {
       setMessage({ text: 'Please select a CSV file first.', type: 'error' });
       return;
     }
-    setUploadingCsv(true);
+    setSubmittingCsv(true);
     setMessage({ text: '', type: '' });
     try {
       const fd = new FormData();
@@ -246,27 +258,30 @@ export default function CampaignDetail() {
     } catch (err) {
       setMessage({ text: getErrorMessage(err, 'Failed to upload CSV file'), type: 'error' });
     } finally {
-      setUploadingCsv(false);
+      setSubmittingCsv(false);
     }
   };
 
   const handleSyncBounces = async () => {
     setMessage({ text: '', type: '' });
-    setSyncing(true);
+    setSubmittingSync(true);
     try {
       const res = await api.post(`/api/campaigns/${id}/sync-bounces`);
-      setMessage({ 
-        text: res.data.message || `Synchronized bounces successfully.`, 
-        type: 'success' 
+      setMessage({
+        text: res.data.message || 'Bounce sync started in the background. Check back in a moment.',
+        type: 'info'
       });
-      fetchData();
+      // Delay fetching data to give the background sync worker time to run
+      setTimeout(() => {
+        fetchData();
+      }, 5000);
     } catch (err) {
-      setMessage({ 
-        text: err.response?.data?.detail || 'Failed to connect to mailbox and sync bounces.', 
-        type: 'error' 
+      setMessage({
+        text: err.response?.data?.detail || "Something went wrong. Please try again.",
+        type: 'error'
       });
     } finally {
-      setSyncing(false);
+      setSubmittingSync(false);
     }
   };
 
@@ -281,8 +296,8 @@ export default function CampaignDetail() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch {
-      setMessage({ text: 'Failed to download recipients CSV', type: 'error' });
+    } catch (err) {
+      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
     }
   };
 
@@ -297,8 +312,8 @@ export default function CampaignDetail() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch {
-      setMessage({ text: 'Failed to download sample CSV template', type: 'error' });
+    } catch (err) {
+      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
     }
   };
 
@@ -371,17 +386,17 @@ export default function CampaignDetail() {
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             {user?.plan !== 'pro' && (
-              <button 
+              <button
                 onClick={() => navigate('/contact')}
-                className="btn btn-primary" 
+                className="btn btn-primary"
                 style={{ padding: '6px 12px', fontSize: '0.8rem', height: '30px' }}
               >
                 Upgrade to Pro
               </button>
             )}
-            <Link 
-              to="/contact" 
-              className="btn btn-secondary" 
+            <Link
+              to="/contact"
+              className="btn btn-secondary"
               style={{ padding: '6px 12px', fontSize: '0.8rem', height: '30px', display: 'inline-flex', alignItems: 'center' }}
             >
               Contact Us
@@ -400,16 +415,16 @@ export default function CampaignDetail() {
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
           {(campaign.status === 'draft' || campaign.status === 'paused') && (
-            <button className="btn btn-primary" onClick={() => handleAction('start')} disabled={actionLoad} style={{ boxShadow: '0 4px 14px rgba(99, 102, 241, 0.25)' }}>
+            <button className="btn btn-primary" onClick={() => handleAction('start')} disabled={submittingAction} style={{ boxShadow: '0 4px 14px rgba(99, 102, 241, 0.25)' }}>
               Start Campaign
             </button>
           )}
           {campaign.status === 'running' && (
-            <button className="btn btn-secondary" onClick={() => handleAction('pause')} disabled={actionLoad}>
+            <button className="btn btn-secondary" onClick={() => handleAction('pause')} disabled={submittingAction}>
               Pause
             </button>
           )}
-          
+
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <button
               className="btn btn-secondary"
@@ -419,7 +434,7 @@ export default function CampaignDetail() {
                 e.stopPropagation();
                 setActiveKebabOpen(!activeKebabOpen);
               }}
-              disabled={actionLoad}
+              disabled={submittingAction}
             >
               ⋯
             </button>
@@ -650,7 +665,7 @@ export default function CampaignDetail() {
           )}
 
           <div className="campaign-workspace" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'stretch', marginBottom: '32px' }}>
-          
+
           {/* Left Column: Edit Template */}
           <div className="card" style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column' }}>
             <h2 className="section-title" style={{ marginBottom: '20px' }}>Email Template</h2>
@@ -662,7 +677,7 @@ export default function CampaignDetail() {
                   className="form-control"
                   value={campName}
                   onChange={e => setCampName(e.target.value)}
-                  disabled={!isEditable || savingTemp}
+                  disabled={!isEditable || submittingTemplate}
                   required
                 />
               </div>
@@ -674,7 +689,7 @@ export default function CampaignDetail() {
                   className="form-control"
                   value={subject}
                   onChange={e => setSubject(e.target.value)}
-                  disabled={!isEditable || savingTemp}
+                  disabled={!isEditable || submittingTemplate}
                   required
                 />
               </div>
@@ -684,7 +699,7 @@ export default function CampaignDetail() {
                 <RichEditor
                   value={body}
                   onChange={setBody}
-                  disabled={!isEditable || savingTemp}
+                  disabled={!isEditable || submittingTemplate}
                 />
                 <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', marginTop: '6px', lineHeight: '1.45' }}>
                   <strong>Supported Placeholders:</strong> <code>{"{{first_name}}"}</code>, <code>{"{{last_name}}"}</code>, <code>{"{{company}}"}</code>, <code>{"{{role}}"}</code>.
@@ -695,7 +710,7 @@ export default function CampaignDetail() {
                   <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', borderRadius: '6px', fontSize: '0.78rem', color: '#b45309', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <span style={{ fontWeight: 700 }}>⚠️ Unrecognized Placeholders:</span>
                     <span>
-                      The template uses <strong>{unrecognizedPlaceholders.map(u => `{{${u}}}`).join(', ')}</strong> which might not match your lead details. 
+                      The template uses <strong>{unrecognizedPlaceholders.map(u => `{{${u}}}`).join(', ')}</strong> which might not match your lead details.
                       Make sure these match your CSV headers exactly, or use standard fields: {availableKeys.map(k => `{{${k}}}`).join(', ')}.
                     </span>
                   </div>
@@ -705,17 +720,17 @@ export default function CampaignDetail() {
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={!isEditable || savingTemp || isSaveQuotaReached}
+                disabled={!isEditable || submittingTemplate || isSaveQuotaReached}
                 style={{ alignSelf: 'flex-start', opacity: isSaveQuotaReached ? 0.6 : 1, cursor: isSaveQuotaReached ? 'not-allowed' : 'pointer' }}
               >
-                {savingTemp ? 'Saving Changes...' : 'Save Changes'}
+                {submittingTemplate ? 'Saving Changes...' : 'Save Changes'}
               </button>
             </form>
           </div>
 
           {/* Right Column: Contact List Management */}
           <div className="contacts-section-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%' }}>
-            
+
             {/* Add Recipient Card */}
             <div className="card" style={{ padding: '24px' }}>
               <h2 className="section-title" style={{ marginBottom: '16px' }}>Add Lead</h2>
@@ -728,7 +743,7 @@ export default function CampaignDetail() {
                     placeholder="name@company.com"
                     value={inlineEmail}
                     onChange={e => setInlineEmail(e.target.value)}
-                    disabled={!isEditable || addingContact}
+                    disabled={!isEditable || submittingContact}
                     required
                     style={{ height: '40px' }}
                   />
@@ -741,7 +756,7 @@ export default function CampaignDetail() {
                     placeholder="e.g. Acme Corp"
                     value={inlineCompany}
                     onChange={e => setInlineCompany(e.target.value)}
-                    disabled={!isEditable || addingContact}
+                    disabled={!isEditable || submittingContact}
                     style={{ height: '40px' }}
                   />
                 </div>
@@ -749,9 +764,9 @@ export default function CampaignDetail() {
                   type="submit"
                   className="btn btn-primary"
                   style={{ height: '40px' }}
-                  disabled={!isEditable || addingContact}
+                  disabled={!isEditable || submittingContact}
                 >
-                  {addingContact ? 'Adding...' : 'Add'}
+                  {submittingContact ? 'Adding...' : 'Add'}
                 </button>
               </form>
             </div>
@@ -760,13 +775,13 @@ export default function CampaignDetail() {
             <div className="card" style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
               <h2 className="section-title" style={{ marginBottom: '12px' }}>Import Contacts</h2>
               <form onSubmit={handleUploadCsv} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div 
+                <div
                   className={`drop-zone${isDragActive ? ' dragged' : ''}`}
                   onDragEnter={handleDrag}
                   onDragOver={handleDrag}
                   onDragLeave={handleDrag}
                   onDrop={handleDrop}
-                  onClick={() => { if (isEditable && !uploadingCsv) document.getElementById('csv-file-input').click(); }}
+                  onClick={() => { if (isEditable && !submittingCsv) document.getElementById('csv-file-input').click(); }}
                   style={{ opacity: isEditable ? 1 : 0.6, cursor: isEditable ? 'pointer' : 'not-allowed' }}
                 >
                   <input
@@ -775,7 +790,7 @@ export default function CampaignDetail() {
                     accept=".csv"
                     style={{ display: 'none' }}
                     onChange={e => setCsvFile(e.target.files[0])}
-                    disabled={!isEditable || uploadingCsv}
+                    disabled={!isEditable || submittingCsv}
                   />
                   <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--primary)', marginBottom: '4px' }}>
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -794,7 +809,7 @@ export default function CampaignDetail() {
                     </div>
                   )}
                 </div>
-                
+
                 <div>
                   <label className="form-label" style={{ marginBottom: '4px', display: 'block' }}>Import Mode</label>
                   <div className="radio-group" style={{ display: 'flex', gap: '20px', margin: '8px 0' }}>
@@ -805,7 +820,7 @@ export default function CampaignDetail() {
                         value="append"
                         checked={csvMode === 'append'}
                         onChange={() => setCsvMode('append')}
-                        disabled={!isEditable || uploadingCsv}
+                        disabled={!isEditable || submittingCsv}
                         style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }}
                       />
                       Append to existing
@@ -817,7 +832,7 @@ export default function CampaignDetail() {
                         value="replace"
                         checked={csvMode === 'replace'}
                         onChange={() => setCsvMode('replace')}
-                        disabled={!isEditable || uploadingCsv}
+                        disabled={!isEditable || submittingCsv}
                         style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }}
                       />
                       Replace list
@@ -832,9 +847,9 @@ export default function CampaignDetail() {
                   <button
                     type="submit"
                     className="btn btn-primary"
-                    disabled={!isEditable || uploadingCsv || !csvFile}
+                    disabled={!isEditable || submittingCsv || !csvFile}
                   >
-                    {uploadingCsv ? 'Importing...' : 'Import CSV'}
+                    {submittingCsv ? 'Importing...' : 'Import CSV'}
                   </button>
                   <button
                     type="button"
@@ -865,14 +880,14 @@ export default function CampaignDetail() {
         <div className="card" style={{ overflow: 'hidden', marginBottom: '32px' }}>
           <div className="tabs-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: '14px' }}>
             <div style={{ display: 'flex', gap: '4px' }}>
-              <button 
+              <button
                 type="button"
                 className={`tab-btn${activeTab === 'all' ? ' active' : ''}`}
                 onClick={() => setActiveTab('all')}
               >
                 All Contacts <span className="tab-badge">{recipients.length}</span>
               </button>
-              <button 
+              <button
                 type="button"
                 className={`tab-btn${activeTab === 'failed' ? ' active' : ''}`}
                 onClick={() => setActiveTab('failed')}
@@ -881,17 +896,17 @@ export default function CampaignDetail() {
               </button>
             </div>
 
-            <button 
+            <button
               type="button"
-              className="btn btn-secondary" 
+              className="btn btn-secondary"
               style={{ fontSize: '0.8rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: '4px 0' }}
               onClick={handleSyncBounces}
-              disabled={syncing}
+              disabled={submittingSync}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: syncing ? 'spin 1.5s linear infinite' : 'none' }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: submittingSync ? 'spin 1.5s linear infinite' : 'none' }}>
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
               </svg>
-              {syncing ? 'Syncing...' : 'Sync Bounces'}
+              {submittingSync ? 'Syncing...' : 'Sync Bounces'}
             </button>
           </div>
 
@@ -899,8 +914,8 @@ export default function CampaignDetail() {
             <>
               <div className="flex-between" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-subtle)' }}>
                 <h2 className="section-title">Outreach Log</h2>
-                <button 
-                  className="btn btn-secondary" 
+                <button
+                  className="btn btn-secondary"
                   style={{ fontSize: '0.8rem', padding: '6px 12px' }}
                   onClick={handleDownloadCsv}
                   disabled={recipients.length === 0}
@@ -1006,10 +1021,10 @@ export default function CampaignDetail() {
               )}
             </>
           ) : (
-            <FailedContactsTab 
-              campaignId={id} 
-              recipients={recipients} 
-              onRefresh={fetchData} 
+            <FailedContactsTab
+              campaignId={id}
+              recipients={recipients}
+              onRefresh={fetchData}
               isEditable={isEditable}
               setActiveTab={setActiveTab}
             />
@@ -1104,8 +1119,8 @@ export default function CampaignDetail() {
                       await api.delete(`/api/campaigns/${id}`);
                       await refreshUser();
                       navigate('/');
-                    } catch {
-                      setMessage({ text: 'Failed to delete campaign.', type: 'error' });
+                    } catch (err) {
+                      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
                     }
                   })();
                 }}>

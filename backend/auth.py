@@ -1,11 +1,14 @@
-import os
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
+import secrets
+
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-import bcrypt
 from sqlalchemy.orm import Session
+
 from database import get_db
 from models import User
 
@@ -22,7 +25,6 @@ if not JWT_SECRET_KEY:
                     break
 
     if not JWT_SECRET_KEY:
-        import secrets
         new_secret = secrets.token_hex(32)
         with ENV_FILE.open("a", encoding="utf-8") as f:
             f.write(f"\nJWT_SECRET_KEY={new_secret}\n")
@@ -79,14 +81,14 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-        
+
     user = db.query(User).filter(User.email == email).first()
     if user is None:
         raise credentials_exception
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your account is suspended. Please contact support."
+            detail="You do not have permission to perform this action."
         )
     return user
 
@@ -95,7 +97,6 @@ def get_current_admin_user(current_user: User = Depends(get_current_user)) -> Us
     if current_user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required."
+            detail="You do not have permission to perform this action."
         )
     return current_user
-

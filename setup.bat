@@ -169,6 +169,8 @@ if "!ADMIN_PASS!"=="" set "ADMIN_PASS=ChangeMe123!"
     echo ENV=development
     echo ALLOWED_ORIGINS=http://localhost:5173
     echo GROQ_API_KEY=your_groq_api_key_here
+    echo GOOGLE_API_KEY=your_google_api_key_here
+    echo GEMINI_API_KEY=your_gemini_api_key_here
 ) > "%BACKEND%\.env"
 
 echo.

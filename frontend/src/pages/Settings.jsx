@@ -1,40 +1,50 @@
+// Settings page for configuring SMTP sender profiles and managing user passwords.
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+
 import { api, useAuth } from '../App';
-import { PLAN_LIMITS } from '../config';
 
 export default function Settings() {
+  // useState hooks
   const { user, refreshUser } = useAuth();
-  const [senders,   setSenders]   = useState([]);
-  const [loading,   setLoading]   = useState(true);
+  const [senders, setSenders] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
-  const [fromName,  setFromName]  = useState('');
-  const [username,  setUsername]  = useState('');
-  const [password,  setPassword]  = useState('');
-  const [host,      setHost]      = useState('smtp.gmail.com');
-  const [port,      setPort]      = useState(465);
-  const [saving,    setSaving]    = useState(false);
-  const [testing,   setTesting]   = useState(false);
-  const [message,   setMessage]   = useState({ text: '', type: '' });
+  const [fromName, setFromName] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [host, setHost] = useState('smtp.gmail.com');
+  const [port, setPort] = useState(465);
+  const [sendDelay, setSendDelay] = useState(3);
+  const [submitting, setSubmitting] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [message, setMessage] = useState({ text: '', type: '' });
   const [testResult, setTestResult] = useState(null);
   const [showTrialBanner, setShowTrialBanner] = useState(true);
 
-  const limit = user?.limits?.max_smtp_accounts ?? PLAN_LIMITS[user?.plan || 'trial'].max_smtp_accounts;
+  // Derived values/variables
+  const limit = user?.limits?.max_smtp_accounts ?? (user?.plan === 'pro' ? 3 : 1);
   const isAtLimit = senders.length >= limit && !editingId;
 
+  // useEffect hooks
+  useEffect(() => {
+    // Empty dependency array: set page title and fetch SMTP senders once on component mount
+    document.title = 'Settings - ColdOutreach';
+    fetchSenders();
+  }, []);
+
+  // Handler and helper functions
   const fetchSenders = async () => {
     try {
       const res = await api.get('/api/settings/smtp');
       setSenders(res.data || []);
       await refreshUser();
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    } catch (e) {
+      // Failed to fetch senders silently
+    } finally {
+      setLoading(false);
+    }
   };
-
-  useEffect(() => {
-    document.title = 'Settings - ColdOutreach';
-    fetchSenders();
-  }, []);
 
   const getErrorMessage = (err, fallback) => {
     if (err.response?.data?.detail) {
@@ -43,62 +53,65 @@ export default function Settings() {
       if (Array.isArray(detail)) {
         return detail.map(d => `${d.loc ? d.loc.slice(1).join(' ') : ''} ${d.msg}`.trim()).join(', ');
       }
-      return JSON.stringify(detail);
     }
-    return err.message || fallback;
+    return err.response?.data?.detail || fallback || "Something went wrong. Please try again.";
   };
 
   const handleSave = async (e) => {
     e.preventDefault();
-    setSaving(true);
+    setSubmitting(true);
     setMessage({ text: '', type: '' });
 
     if (!fromName.trim()) {
       setMessage({ text: 'Sender Name is required', type: 'error' });
-      setSaving(false);
+      setSubmitting(false);
       return;
     }
 
-    if (!editingId) {
-      if (!username.trim()) {
-        setMessage({ text: 'Gmail Address is required', type: 'error' });
-        setSaving(false);
-        return;
-      }
-      if (!password.trim()) {
-        setMessage({ text: 'Password is required', type: 'error' });
-        setSaving(false);
-        return;
-      }
-      const parsedPort = parseInt(port);
-      if (isNaN(parsedPort) || parsedPort <= 0) {
-        setMessage({ text: 'A valid port number is required', type: 'error' });
-        setSaving(false);
-        return;
-      }
+    if (!username.trim()) {
+      setMessage({ text: 'Gmail Address is required', type: 'error' });
+      setSubmitting(false);
+      return;
+    }
+    if (!password.trim()) {
+      setMessage({ text: 'Password is required', type: 'error' });
+      setSubmitting(false);
+      return;
+    }
+    const parsedPort = parseInt(port);
+    if (isNaN(parsedPort) || parsedPort <= 0) {
+      setMessage({ text: 'A valid port number is required', type: 'error' });
+      setSubmitting(false);
+      return;
+    }
+    if (!host.trim()) {
+      setMessage({ text: 'SMTP Host is required', type: 'error' });
+      setSubmitting(false);
+      return;
     }
 
     try {
       const fd = new FormData();
       if (editingId) {
         fd.append('sender_id', editingId);
-        fd.append('from_name', fromName);
-      } else {
-        const parsedPort = parseInt(port);
-        fd.append('host', host);
-        fd.append('port', parsedPort);
-        fd.append('username', username);
-        fd.append('password', password);
-        fd.append('from_name', fromName);
-        fd.append('from_email', username);
       }
+      fd.append('host', host);
+      fd.append('port', parsedPort);
+      fd.append('username', username);
+      fd.append('password', password);
+      fd.append('from_name', fromName);
+      fd.append('from_email', username);
+      fd.append('send_delay_seconds', sendDelay);
+
       const res = await api.post('/api/settings/smtp', fd);
       setMessage({ text: res.data.message, type: 'success' });
       resetForm();
       fetchSenders();
     } catch (err) {
       setMessage({ text: getErrorMessage(err, 'Failed to save settings'), type: 'error' });
-    } finally { setSaving(false); }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleTest = async () => {
@@ -147,7 +160,9 @@ export default function Settings() {
     } catch (err) {
       setMessage({ text: getErrorMessage(err, 'SMTP test failed'), type: 'error' });
       setTestResult({ status: 'error', text: 'Connection Failed' });
-    } finally { setTesting(false); }
+    } finally {
+      setTesting(false);
+    }
   };
 
   const handleEdit = (s) => {
@@ -157,6 +172,7 @@ export default function Settings() {
     setPassword('••••••••••••••••');
     setHost(s.host);
     setPort(s.port);
+    setSendDelay(s.send_delay_seconds || 3);
     setMessage({ text: '', type: '' });
   };
 
@@ -179,8 +195,11 @@ export default function Settings() {
     setPassword('');
     setHost('smtp.gmail.com');
     setPort(465);
+    setSendDelay(3);
     setTestResult(null);
   };
+
+
 
   if (loading) return <p style={{ color: 'var(--muted-foreground)' }}>Loading settings…</p>;
 
@@ -207,8 +226,8 @@ export default function Settings() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.82rem', height: '30px' }} onClick={() => alert('Subscription/upgrade features coming soon!')}>Upgrade to Pro</button>
-            <button 
-              onClick={() => setShowTrialBanner(false)} 
+            <button
+              onClick={() => setShowTrialBanner(false)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '4px', display: 'flex', alignItems: 'center', opacity: 0.7 }}
               title="Dismiss"
               onMouseEnter={e => e.currentTarget.style.opacity = 1}
@@ -234,98 +253,104 @@ export default function Settings() {
 
       <div className="settings-grid">
 
-        {/* ── Add / Edit Form ── */}
-        <div className="card" style={{ padding: '24px' }}>
-          <h2 className="section-title" style={{ marginBottom: '20px' }}>
-            {editingId ? 'Edit Sender' : 'Add Sender'}
-          </h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* ── Add / Edit Form ── */}
+          <div className="card" style={{ padding: '24px' }}>
+            <h2 className="section-title" style={{ marginBottom: '20px' }}>
+              {editingId ? 'Edit Sender' : 'Add Sender'}
+            </h2>
 
-          <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-            <div className="form-group">
-              <label className="form-label">Sender Name</label>
-              <input type="text" className="form-control" placeholder="e.g. Company Outreach" value={fromName} onChange={e => setFromName(e.target.value)} required />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Gmail Address</label>
-              <input type="email" className="form-control" placeholder="you@gmail.com" value={username} onChange={e => setUsername(e.target.value)} required={!editingId} disabled={!!editingId} style={{ cursor: editingId ? 'not-allowed' : 'text', opacity: editingId ? 0.75 : 1 }} autoComplete="off" />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Gmail App Password</label>
-              <input type="password" className="form-control" placeholder="16-character app password" value={password} onChange={e => setPassword(e.target.value)} required={!editingId} disabled={!!editingId} style={{ cursor: editingId ? 'not-allowed' : 'text', opacity: editingId ? 0.75 : 1 }} autoComplete="new-password" />
-              <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1.4' }}>
-                Use an App Password — not your account password.
-                <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, display: 'block', marginTop: '4px' }}>
-                  Generate one here →
-                </a>
-              </span>
-              {editingId && (
-                <div style={{ marginTop: '12px', padding: '10px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius)', fontSize: '0.78rem', color: 'var(--muted-foreground)', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--primary)', flexShrink: 0, marginTop: '2px' }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                  <span>
-                    To change the Gmail Address or App Password, please{' '}
-                    <Link to="/contact" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }}>
-                      Contact Us
-                    </Link>{' '}
-                    to request the change.
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Advanced */}
-            <details style={{ marginBottom: '16px' }}>
-              <summary style={{ cursor: 'pointer', fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, userSelect: 'none' }}>
-                Advanced SMTP Settings
-              </summary>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: '12px', marginTop: '12px' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">SMTP Host</label>
-                  <input type="text" className="form-control" value={host} onChange={e => setHost(e.target.value)} required={!editingId} disabled={!!editingId} style={{ cursor: editingId ? 'not-allowed' : 'text', opacity: editingId ? 0.75 : 1 }} />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Port</label>
-                  <input type="number" className="form-control" value={port} onChange={e => setPort(parseInt(e.target.value))} required={!editingId} disabled={!!editingId} style={{ cursor: editingId ? 'not-allowed' : 'text', opacity: editingId ? 0.75 : 1 }} />
-                </div>
+            <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+              <div className="form-group">
+                <label className="form-label">Sender Name</label>
+                <input type="text" className="form-control" placeholder="e.g. Company Outreach" value={fromName} onChange={e => setFromName(e.target.value)} required />
               </div>
-            </details>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-              <button type="button" className="btn btn-secondary" style={{ flexGrow: 1 }} onClick={handleTest} disabled={saving || testing || !username || !password}>
-                {testing ? 'Testing…' : 'Test Connection'}
-              </button>
-              {testResult && (
-                <span className={`badge ${
-                  testResult.status === 'success' ? 'badge-success' :
-                  testResult.status === 'error' ? 'badge-error' :
-                  'badge-running'
-                }`} style={{ fontSize: '0.78rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center' }}>
-                  {testResult.status === 'success' && (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px', flexShrink: 0 }}><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  )}
-                  {testResult.status === 'error' && (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px', flexShrink: 0 }}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                  )}
-                  {testResult.text}
+              <div className="form-group">
+                <label className="form-label">Gmail Address</label>
+                <input type="email" className="form-control" placeholder="you@gmail.com" value={username} onChange={e => setUsername(e.target.value)} required autoComplete="off" />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Gmail App Password</label>
+                <input type="password" className="form-control" placeholder="16-character app password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="new-password" />
+                <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1.4' }}>
+                  Use an App Password — not your account password.
+                  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, display: 'block', marginTop: '4px' }}>
+                    Generate one here →
+                  </a>
                 </span>
-              )}
-            </div>
+              </div>
 
-            <div 
-              style={{ display: 'flex', gap: '8px', width: '100%' }}
-              title={isAtLimit ? "Limit reached — upgrade to add more senders." : ""}
-            >
-              <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={saving || testing || isAtLimit}>
-                {saving ? 'Saving…' : editingId ? 'Update Sender' : 'Add Sender'}
-              </button>
-              {editingId && (
-                <button type="button" className="btn btn-secondary" onClick={resetForm} disabled={saving || testing}>
-                  Cancel
+              <div className="form-group">
+                <label className="form-label">Send Delay (seconds)</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  min="1"
+                  max="60"
+                  value={sendDelay}
+                  onChange={e => setSendDelay(parseInt(e.target.value) || 3)}
+                  required
+                />
+                <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1.4' }}>
+                  Wait time between sending emails (clamped between 1 and 60 seconds).
+                </span>
+              </div>
+
+              {/* Advanced */}
+              <details style={{ marginBottom: '16px' }}>
+                <summary style={{ cursor: 'pointer', fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, userSelect: 'none' }}>
+                  Advanced SMTP Settings
+                </summary>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: '12px', marginTop: '12px' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">SMTP Host</label>
+                    <input type="text" className="form-control" value={host} onChange={e => setHost(e.target.value)} required />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Port</label>
+                    <input type="number" className="form-control" value={port} onChange={e => setPort(parseInt(e.target.value))} required />
+                  </div>
+                </div>
+              </details>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+                <button type="button" className="btn btn-secondary" style={{ flexGrow: 1 }} onClick={handleTest} disabled={submitting || testing || !username || !password}>
+                  {testing ? 'Testing…' : 'Test Connection'}
                 </button>
-              )}
-            </div>
-          </form>
+                {testResult && (
+                  <span className={`badge ${
+                    testResult.status === 'success' ? 'badge-success' :
+                    testResult.status === 'error' ? 'badge-error' :
+                    'badge-running'
+                  }`} style={{ fontSize: '0.78rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center' }}>
+                    {testResult.status === 'success' && (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px', flexShrink: 0 }}><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    )}
+                    {testResult.status === 'error' && (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px', flexShrink: 0 }}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    )}
+                    {testResult.text}
+                  </span>
+                )}
+              </div>
+
+              <div
+                style={{ display: 'flex', gap: '8px', width: '100%' }}
+                title={isAtLimit ? "Limit reached — upgrade to add more senders." : ""}
+              >
+                <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={submitting || testing || isAtLimit}>
+                  {submitting ? 'Saving…' : editingId ? 'Update Sender' : 'Add Sender'}
+                </button>
+                {editingId && (
+                  <button type="button" className="btn btn-secondary" onClick={resetForm} disabled={submitting || testing}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
         </div>
 
         <div className="card" style={{ padding: '24px' }}>
@@ -388,7 +413,7 @@ export default function Settings() {
                         <strong style={{ display: 'block', fontSize: '0.92rem', fontFamily: 'var(--font-header)', fontWeight: 700 }}>{s.from_name}</strong>
                         <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>{s.username}</span>
                         <div style={{ marginTop: '3px' }}>
-                          <span className="badge badge-success" style={{ fontSize: '0.64rem' }}>● Active</span>
+                           <span className="badge badge-success" style={{ fontSize: '0.64rem' }}>● Active</span>
                         </div>
                       </div>
                     </div>

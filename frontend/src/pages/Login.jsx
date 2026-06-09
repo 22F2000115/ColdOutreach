@@ -1,38 +1,47 @@
+// Login page rendering the sign-in form and brand panel.
 import { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
+
 import { useAuth } from '../App';
 import logoLight from '../assets/logo-light.png';
 import logoDark from '../assets/logo-dark.png';
 
 export default function Login() {
-  const [email,    setEmail]    = useState('');
+  // useState hooks
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error,    setError]    = useState('');
+  const [error, setError] = useState('');
   const [animateShake, setAnimateShake] = useState(false);
-  const [loading,  setLoading]  = useState(false);
-  const { login, theme, toggleTheme } = useAuth();
-  const navigate  = useNavigate();
-  const location  = useLocation();
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    document.title = 'Sign In - ColdOutreach';
-  }, []);
+  const { login, theme, toggleTheme } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Derived values/variables
   const searchParams = new URLSearchParams(location.search);
   const registered = searchParams.get('registered') === '1';
 
+  // useEffect hooks
+  useEffect(() => {
+    // Empty dependency array: set page title once on component mount
+    document.title = 'Sign In - ColdOutreach';
+  }, []);
+
+  // Handler and helper functions
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
+    setSubmitting(true);
     try {
       await login(email, password);
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Authentication failed. Please check your credentials.');
+      setError(err.response?.data?.detail || 'Something went wrong. Please try again.');
       setAnimateShake(true);
       setTimeout(() => setAnimateShake(false), 400);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -93,10 +102,10 @@ export default function Login() {
 
         {/* Brand Header */}
         <div style={{ zIndex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <img 
-            src={logoDark} 
-            alt="ColdOutreach Logo" 
-            style={{ height: '26px', width: 'auto', display: 'block', objectFit: 'contain' }} 
+          <img
+            src={logoDark}
+            alt="ColdOutreach Logo"
+            style={{ height: '26px', width: 'auto', display: 'block', objectFit: 'contain' }}
           />
           <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.4rem', fontWeight: 900, letterSpacing: '-0.02em', transform: 'translateY(2px)' }}>
             <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'rgba(255,255,255,0.9)' }}>Outreach</span>
@@ -158,10 +167,10 @@ export default function Login() {
         <div style={{ maxWidth: '400px', width: '100%', animation: 'scaleIn 0.3s var(--ease-spring)' }}>
           {/* Brand header on Mobile only */}
           <div className="mobile-only-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-            <img 
-              src={theme === 'dark' ? logoDark : logoLight} 
-              alt="ColdOutreach Logo" 
-              style={{ height: '64px', width: 'auto', display: 'block', objectFit: 'contain' }} 
+            <img
+              src={theme === 'dark' ? logoDark : logoLight}
+              alt="ColdOutreach Logo"
+              style={{ height: '64px', width: 'auto', display: 'block', objectFit: 'contain' }}
             />
             <div style={{ fontFamily: 'var(--font-header)', fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'var(--logo-dark)' }}>Outreach</span>
@@ -214,8 +223,8 @@ export default function Login() {
                   </svg>
                 </div>
               </div>
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '12px', padding: '11px', gap: '8px' }} disabled={loading}>
-                {loading ? (
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '12px', padding: '11px', gap: '8px' }} disabled={submitting}>
+                {submitting ? (
                   <>
                     <svg className="spinner" viewBox="0 0 50 50" style={{ width: '18px', height: '18px', animation: 'spin 1s linear infinite' }}>
                       <circle className="path" cx="25" cy="25" r="20" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" style={{ strokeDasharray: '1, 150', strokeDashoffset: 0, animation: 'dash 1.5s ease-in-out infinite' }}></circle>

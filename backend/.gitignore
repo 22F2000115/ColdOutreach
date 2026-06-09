@@ -1,35 +1,9 @@
-# ===== Environment & Secrets =====
-.env
-.env.*
-!.env.example
-
-# ===== Virtual Environment =====
-venv/
-env/
-.venv/
-
-# ===== Python Bytecode =====
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-
-# ===== Database =====
+database.db
+database.db.bak
 *.db
-*.sqlite
-*.sqlite3
-
-# ===== Uploaded Files =====
+*.db.bak
 uploads/
-
-# ===== Logs =====
-*.log
-logs/
-
-# ===== OS & Editor =====
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.suo
-*.swp
+.env
+__pycache__/
+*.pyc
+.venv/

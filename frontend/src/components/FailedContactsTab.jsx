@@ -5,18 +5,17 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [errorFilter, setErrorFilter] = useState('All Errors');
   const [message, setMessage] = useState({ text: '', type: '' });
-  
+
   // CSV Upload States
   const [csvFile, setCsvFile] = useState(null);
   const [csvMode, setCsvMode] = useState('append'); // 'append' or 'replace'
-  const [uploadingCsv, setUploadingCsv] = useState(false);
+  const [submittingCsv, setSubmittingCsv] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
-  const [actionLoad, setActionLoad] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
-
 
   // Filter only failed contacts
   const failedContacts = recipients.filter(r => r.status === 'failed');
@@ -47,6 +46,17 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
     return getErrorGroup(c.error_message) === errorFilter;
   });
 
+  useEffect(() => {
+    const maxPage = Math.ceil(filteredContacts.length / pageSize);
+    if (maxPage > 0 && currentPage > maxPage) {
+      setCurrentPage(maxPage);
+    }
+  }, [filteredContacts.length, currentPage]);
+
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedContacts = filteredContacts.slice(startIndex, startIndex + pageSize);
+  const totalPages = Math.ceil(filteredContacts.length / pageSize);
+
   // Selection Logic
   const handleSelectAll = (e) => {
     if (e.target.checked) {
@@ -71,7 +81,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
   const handleDeleteRecipient = async (recipientId) => {
     if (!confirm('Remove this failed contact from the campaign?')) return;
     setMessage({ text: '', type: '' });
-    setActionLoad(true);
+    setSubmitting(true);
     try {
       await api.delete(`/api/campaigns/${campaignId}/recipients/${recipientId}`);
       setSelectedIds(prev => {
@@ -82,9 +92,9 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
       setMessage({ text: 'Recipient removed.', type: 'success' });
       onRefresh();
     } catch (err) {
-      setMessage({ text: err.response?.data?.detail || 'Failed to remove recipient', type: 'error' });
+      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
     } finally {
-      setActionLoad(false);
+      setSubmitting(false);
     }
   };
 
@@ -95,7 +105,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
     if (!confirm(`Are you sure you want to delete the ${idsToDelete.length} selected failed contacts?`)) return;
 
     setMessage({ text: '', type: '' });
-    setActionLoad(true);
+    setSubmitting(true);
     try {
       await api.delete(`/api/campaigns/${campaignId}/recipients/bulk`, {
         data: { ids: idsToDelete }
@@ -104,9 +114,9 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
       setMessage({ text: `Successfully deleted ${idsToDelete.length} contacts.`, type: 'success' });
       onRefresh();
     } catch (err) {
-      setMessage({ text: err.response?.data?.detail || 'Failed to delete selected recipients', type: 'error' });
+      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
     } finally {
-      setActionLoad(false);
+      setSubmitting(false);
     }
   };
 
@@ -160,7 +170,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
       setMessage({ text: 'Please select a CSV file first.', type: 'error' });
       return;
     }
-    setUploadingCsv(true);
+    setSubmittingCsv(true);
     setMessage({ text: '', type: '' });
     try {
       const fd = new FormData();
@@ -175,28 +185,17 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
       // Switch back to "All Contacts" tab after successful re-upload
       setActiveTab('all');
     } catch (err) {
-      setMessage({ text: err.response?.data?.detail || 'Failed to upload CSV file', type: 'error' });
+      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
     } finally {
-      setUploadingCsv(false);
+      setSubmittingCsv(false);
     }
   };
-
-  useEffect(() => {
-    const maxPage = Math.ceil(filteredContacts.length / pageSize);
-    if (maxPage > 0 && currentPage > maxPage) {
-      setCurrentPage(maxPage);
-    }
-  }, [filteredContacts.length, currentPage]);
-
-  const startIndex = (currentPage - 1) * pageSize;
-  const paginatedContacts = filteredContacts.slice(startIndex, startIndex + pageSize);
-  const totalPages = Math.ceil(filteredContacts.length / pageSize);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {message.text && (
-        <div 
-          className={`alert alert-${message.type === 'success' ? 'success' : 'error'}`} 
+        <div
+          className={`alert alert-${message.type === 'success' ? 'success' : 'error'}`}
           style={{ margin: '14px 22px 0 22px' }}
         >
           {message.type === 'success' ? (
@@ -214,7 +213,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
           <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
             Filter by Error:
           </label>
-          <select 
+          <select
             className="error-filter-select"
             value={errorFilter}
             onChange={(e) => {
@@ -230,9 +229,9 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button 
+          <button
             type="button"
-            className="btn btn-secondary" 
+            className="btn btn-secondary"
             style={{ fontSize: '0.8rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
             onClick={handleDownloadFailedCsv}
             disabled={failedContacts.length === 0}
@@ -253,21 +252,21 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
           <span className="bulk-action-text">
             {selectedIds.size} contact{selectedIds.size > 1 ? 's' : ''} selected
           </span>
-          <button 
+          <button
             type="button"
             className="btn btn-secondary"
-            style={{ 
-              fontSize: '0.8rem', 
-              padding: '6px 12px', 
-              color: 'var(--error)', 
-              borderColor: 'rgba(220,38,38,0.25)', 
-              display: 'inline-flex', 
-              alignItems: 'center', 
+            style={{
+              fontSize: '0.8rem',
+              padding: '6px 12px',
+              color: 'var(--error)',
+              borderColor: 'rgba(220,38,38,0.25)',
+              display: 'inline-flex',
+              alignItems: 'center',
               gap: '6px',
               backgroundColor: 'var(--card)'
             }}
             onClick={handleDeleteSelected}
-            disabled={actionLoad}
+            disabled={submitting}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
@@ -284,8 +283,8 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
           <thead>
             <tr>
               <th style={{ width: '40px', textAlign: 'center' }}>
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   className="table-checkbox"
                   checked={filteredContacts.length > 0 && selectedIds.size === filteredContacts.length}
                   onChange={handleSelectAll}
@@ -308,8 +307,8 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
             ) : paginatedContacts.map((r) => (
               <tr key={r.id} className="outreach-log-row status-failed">
                 <td style={{ textAlign: 'center' }}>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     className="table-checkbox"
                     checked={selectedIds.has(r.id)}
                     onChange={(e) => handleSelectOne(r.id, e.target.checked)}
@@ -327,7 +326,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                     <button
                       type="button"
                       className="btn btn-secondary"
-                      disabled={actionLoad}
+                      disabled={submitting}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -339,11 +338,11 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                         color: 'var(--error)',
                         borderColor: 'transparent',
                         background: 'transparent',
-                        cursor: actionLoad ? 'not-allowed' : 'pointer',
-                        opacity: actionLoad ? 0.5 : 1
+                        cursor: submitting ? 'not-allowed' : 'pointer',
+                        opacity: submitting ? 0.5 : 1
                       }}
                       onMouseEnter={(e) => {
-                        if (!actionLoad) {
+                        if (!submitting) {
                           e.currentTarget.style.background = 'rgba(244, 63, 94, 0.08)';
                           e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.2)';
                         }
@@ -405,13 +404,13 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
             Fix any failed contacts in your spreadsheet and upload it here. Make sure the headers match your original import.
           </p>
           <form onSubmit={handleUploadCorrectedCsv} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div 
+            <div
               className={`drop-zone${isDragActive ? ' dragged' : ''}`}
               onDragEnter={handleDrag}
               onDragOver={handleDrag}
               onDragLeave={handleDrag}
               onDrop={handleDrop}
-              onClick={() => { if (!uploadingCsv) document.getElementById('corrected-csv-file-input').click(); }}
+              onClick={() => { if (!submittingCsv) document.getElementById('corrected-csv-file-input').click(); }}
               style={{ cursor: 'pointer', background: 'var(--card)' }}
             >
               <input
@@ -420,7 +419,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                 accept=".csv"
                 style={{ display: 'none' }}
                 onChange={e => setCsvFile(e.target.files[0])}
-                disabled={uploadingCsv}
+                disabled={submittingCsv}
               />
               <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--primary)', marginBottom: '4px' }}>
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -441,7 +440,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                 </div>
               )}
             </div>
-            
+
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
               <div>
                 <label className="form-label" style={{ marginBottom: '4px', display: 'block' }}>Import Mode</label>
@@ -453,7 +452,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                       value="append"
                       checked={csvMode === 'append'}
                       onChange={() => setCsvMode('append')}
-                      disabled={uploadingCsv}
+                      disabled={submittingCsv}
                       style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }}
                     />
                     Append (keeps existing log, adds corrected ones)
@@ -465,7 +464,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                       value="replace"
                       checked={csvMode === 'replace'}
                       onChange={() => setCsvMode('replace')}
-                      disabled={uploadingCsv}
+                      disabled={submittingCsv}
                       style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }}
                     />
                     Replace list
@@ -479,10 +478,10 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={uploadingCsv || !csvFile}
+                disabled={submittingCsv || !csvFile}
                 style={{ alignSelf: 'flex-end', height: '40px' }}
               >
-                {uploadingCsv ? 'Importing...' : 'Upload Corrected CSV'}
+                {submittingCsv ? 'Importing...' : 'Upload Corrected CSV'}
               </button>
             </div>
           </form>

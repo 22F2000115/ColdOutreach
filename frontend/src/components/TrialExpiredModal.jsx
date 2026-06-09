@@ -1,4 +1,3 @@
-
 export default function TrialExpiredModal({ onSignOut }) {
   const handleUpgrade = () => {
     // Navigate to settings or upgrade page. Here we just redirect to settings.
@@ -85,7 +84,7 @@ export default function TrialExpiredModal({ onSignOut }) {
           >
             Upgrade to Pro →
           </button>
-          
+
           <button
             onClick={onSignOut}
             className="btn btn-secondary"

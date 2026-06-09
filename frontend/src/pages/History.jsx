@@ -1,4 +1,6 @@
+// History page displaying overall email metrics, activity logs timeline, and campaign breakdown.
 import { useState, useEffect, useCallback, useRef } from 'react';
+
 import { api } from '../App';
 
 // ─── Icon Components ──────────────────────────────────────────────────────────
@@ -109,8 +111,8 @@ function IconSpinner() {
 
 function StatCard({ label, value, color, icon }) {
   return (
-    <div 
-      className="metric-card" 
+    <div
+      className="metric-card"
       style={{
         background: `color-mix(in srgb, ${color} 8%, var(--bg-card))`,
         border: '1px solid var(--border-card)',
@@ -208,25 +210,30 @@ function campaignStatusBadge(status) {
 // ─── Campaign Accordion Row ───────────────────────────────────────────────────
 
 function CampaignRow({ campaign, isOpen, onToggle }) {
+  // useState hooks
   const [detail, setDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState(null);
+
+  // useRef hooks
   const fetchedRef = useRef(false);
 
+  // Derived values/variables
+  const total = campaign.stats?.total || 0;
+  const sent = campaign.stats?.sent || 0;
+  const failed = campaign.stats?.failed || 0;
+
+  // useEffect hooks
   useEffect(() => {
     if (isOpen && !fetchedRef.current) {
       fetchedRef.current = true;
       setLoadingDetail(true);
       api.get(`/api/user/campaign-activity/${campaign.id}`)
         .then(res => setDetail(res.data))
-        .catch(err => setDetailError(err.response?.data?.detail || 'Failed to load details.'))
+        .catch(err => setDetailError(err.response?.data?.detail || 'Something went wrong. Please try again.'))
         .finally(() => setLoadingDetail(false));
     }
   }, [isOpen, campaign.id]);
-
-  const total = campaign.stats?.total || 0;
-  const sent = campaign.stats?.sent || 0;
-  const failed = campaign.stats?.failed || 0;
 
   return (
     <div style={{
@@ -392,33 +399,40 @@ function CampaignRow({ campaign, isOpen, onToggle }) {
   );
 }
 
+
 // ─── Main History Page ────────────────────────────────────────────────────────
 
 export default function History() {
-  // Filters
+  // useState hooks
   const [eventType, setEventType] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-
-  // Summary stats
   const [summary, setSummary] = useState(null);
-
-  // Activity logs
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-
-  // Campaigns for breakdown panel
   const [campaigns, setCampaigns] = useState([]);
   const [campaignsLoading, setCampaignsLoading] = useState(true);
   const [openCampaignId, setOpenCampaignId] = useState(null);
-
-  const [syncing, setSyncing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
 
+  // Derived values/variables
+  const limit = 50;
+  const activeCampaigns = campaigns.filter(c => c.status !== 'draft');
+  const stats = summary
+    ? [
+        { label: 'Emails Sent',       value: summary.total_emails_sent,  color: '#6366F1', icon: <IconMail /> },
+        { label: 'Campaigns Run',     value: summary.total_campaigns_run, color: '#06B6D4', icon: <IconPaperPlane /> },
+        { label: 'Delivered',         value: summary.delivered_count,     color: '#10B981', icon: <IconCheckCircle /> },
+        { label: 'Failed / Bounced',  value: summary.failed_count,        color: '#F43F5E', icon: <IconAlertCircle /> },
+      ]
+    : null;
+
+  // useEffect hooks
   useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => setToast(null), 4000);
@@ -426,37 +440,9 @@ export default function History() {
     }
   }, [toast]);
 
-  const handleSyncBounces = async () => {
-    const activeCamps = campaigns.filter(c => c.status !== 'draft');
-    if (activeCamps.length === 0) {
-      setToast({ message: 'No active campaigns found to sync bounces.', type: 'error' });
-      return;
-    }
-    setSyncing(true);
-    try {
-      await Promise.all(activeCamps.map(c => api.post(`/api/campaigns/${c.id}/sync-bounces`)));
-      setToast({ message: 'Synchronized bounces successfully for all active campaigns.', type: 'success' });
-      
-      // Refresh the page data
-      fetchLogs(0, false);
-      api.get('/api/campaigns')
-        .then(res => setCampaigns(res.data || []))
-        .catch(() => {});
-    } catch (err) {
-      setToast({ 
-        message: err.response?.data?.detail || 'Failed to connect to mailboxes and sync bounces.', 
-        type: 'error' 
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const limit = 50;
-
   useEffect(() => {
+    // Empty dependency array: set page title and fetch initial list of campaigns once on component mount
     document.title = 'Activity History - ColdOutreach';
-    // Load campaigns once
     api.get('/api/campaigns')
       .then(res => setCampaigns(res.data || []))
       .catch(() => {})
@@ -486,7 +472,7 @@ export default function History() {
 
       setHasMore(newLogs.length >= limit);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to fetch activity logs.');
+      setError(err.response?.data?.detail || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -497,6 +483,33 @@ export default function History() {
     setOffset(0);
     fetchLogs(0, false);
   }, [eventType, fromDate, toDate, fetchLogs]);
+
+  // Handler and helper functions
+  const handleSyncBounces = async () => {
+    const activeCamps = campaigns.filter(c => c.status !== 'draft');
+    if (activeCamps.length === 0) {
+      setToast({ message: 'No active campaigns found to sync bounces.', type: 'error' });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await Promise.all(activeCamps.map(c => api.post(`/api/campaigns/${c.id}/sync-bounces`)));
+      setToast({ message: 'Synchronized bounces successfully for all active campaigns.', type: 'success' });
+
+      // Refresh the page data
+      fetchLogs(0, false);
+      api.get('/api/campaigns')
+        .then(res => setCampaigns(res.data || []))
+        .catch(() => {});
+    } catch (err) {
+      setToast({
+        message: err.response?.data?.detail || 'Something went wrong. Please try again.',
+        type: 'error'
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleLoadMore = () => {
     const nextOffset = offset + limit;
@@ -531,19 +544,6 @@ export default function History() {
     document.body.removeChild(a);
   };
 
-  // Stat cards data
-  const stats = summary
-    ? [
-        { label: 'Emails Sent',       value: summary.total_emails_sent,  color: '#6366F1', icon: <IconMail /> },
-        { label: 'Campaigns Run',     value: summary.total_campaigns_run, color: '#06B6D4', icon: <IconPaperPlane /> },
-        { label: 'Delivered',         value: summary.delivered_count,     color: '#10B981', icon: <IconCheckCircle /> },
-        { label: 'Failed / Bounced',  value: summary.failed_count,        color: '#F43F5E', icon: <IconAlertCircle /> },
-      ]
-    : null;
-
-  // Campaigns with activity (non-draft)
-  const activeCampaigns = campaigns.filter(c => c.status !== 'draft');
-
   return (
     <div className="container" style={{ paddingBottom: '48px' }}>
 
@@ -558,7 +558,7 @@ export default function History() {
             id="sync_bounces_btn"
             className="btn btn-secondary"
             onClick={handleSyncBounces}
-            disabled={syncing}
+            disabled={submitting}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -568,14 +568,14 @@ export default function History() {
               color: 'var(--text-primary)',
             }}
           >
-            {syncing ? <IconSpinner /> : <IconRefresh />}
+            {submitting ? <IconSpinner /> : <IconRefresh />}
             <span>Sync Bounces</span>
           </button>
           <button
             id="export_csv_btn"
             className="btn btn-secondary"
             onClick={handleExportCSV}
-            disabled={syncing || logs.length === 0}
+            disabled={submitting || logs.length === 0}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -704,7 +704,7 @@ export default function History() {
         {/* ── Left: Activity Feed ── */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {/* Timeline wrapped in card with padding */}
-          <div className="card bg-white border border-slate-200 dark:bg-[var(--bg-card)] dark:border-[var(--border-card)]" style={{
+          <div className="card bg-white dark:bg-[var(--bg-card)] border border-slate-200 dark:border-[var(--border-card)]" style={{
             padding: '24px',
             borderRadius: '12px',
             minHeight: '300px',
@@ -815,7 +815,7 @@ export default function History() {
 
         {/* ── Right: Campaign Breakdown ── */}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <div className="card bg-white border border-slate-200 dark:bg-[var(--bg-card)] dark:border-[var(--border-card)]" style={{
+          <div className="card bg-white dark:bg-[var(--bg-card)] border border-slate-200 dark:border-[var(--border-card)]" style={{
             padding: '24px',
             borderRadius: '12px',
             minHeight: '300px',

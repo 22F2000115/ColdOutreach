@@ -23,7 +23,7 @@ client = TestClient(app)
 
 def run_tests():
     print("Starting programatic API tests...")
-    
+
     # 1. Clean up any previous test user and reset global plan limits
     db = SessionLocal()
     trial_quota = db.query(PlanQuota).filter(PlanQuota.plan == "trial").first()
@@ -44,20 +44,13 @@ def run_tests():
         pro_quota.save_limit = 999999
     db.commit()
 
-    # Sync global limits in-memory in main app
-    from main import PLAN_LIMITS
-    PLAN_LIMITS["trial"]["max_smtp_accounts"] = 1
-    PLAN_LIMITS["trial"]["max_campaigns"] = 3
-    PLAN_LIMITS["pro"]["max_smtp_accounts"] = 3
-    PLAN_LIMITS["pro"]["max_campaigns"] = 999999
-
     test_email = "test_api_user@example.com"
     existing = db.query(User).filter(User.email == test_email).first()
     if existing:
         db.delete(existing)
         db.commit()
     db.close()
-    
+
     # 2. Test Registration
     print("Testing Registration...")
     reg_response = client.post(
@@ -67,7 +60,7 @@ def run_tests():
     assert reg_response.status_code == 201
     reg_json = reg_response.json()
     assert "user_id" in reg_json
-    
+
     # Check User defaults in DB
     db = SessionLocal()
     user = db.query(User).filter(User.email == test_email).first()
@@ -79,7 +72,7 @@ def run_tests():
     assert diff.days >= 29 and diff.days <= 30
     db.close()
     print("Registration OK.")
-    
+
     # 3. Test Login and Token Generation
     print("Testing Login...")
     login_response = client.post(
@@ -92,11 +85,11 @@ def run_tests():
     assert login_json["token_type"] == "bearer"
     # Check refresh_token cookie
     assert "refresh_token" in login_response.cookies
-    
+
     access_token = login_json["access_token"]
     headers = {"Authorization": f"Bearer {access_token}"}
     print("Login OK.")
-    
+
     # 4. Test SMTP Account Limits (Trial = 1)
     print("Testing SMTP Limits (Trial plan)...")
     # Add first SMTP settings
@@ -113,7 +106,7 @@ def run_tests():
         }
     )
     assert smtp1_response.status_code == 200
-    
+
     # Try adding second SMTP settings (should fail)
     smtp2_response = client.post(
         "/api/settings/smtp",
@@ -128,9 +121,9 @@ def run_tests():
         }
     )
     assert smtp2_response.status_code == 403
-    assert "limit reached" in smtp2_response.json()["detail"]
+    assert smtp2_response.json()["detail"] == "You do not have permission to perform this action."
     print("SMTP Limit (Trial) OK.")
-    
+
     # 5. Test SMTP Account Limits upgrade (Pro = 3)
     print("Testing SMTP Limits (Pro plan)...")
     # Manually upgrade user in DB to pro
@@ -139,7 +132,7 @@ def run_tests():
     user.plan = "pro"
     db.commit()
     db.close()
-    
+
     # Try adding second SMTP settings again (should succeed)
     smtp2_response = client.post(
         "/api/settings/smtp",
@@ -154,7 +147,7 @@ def run_tests():
         }
     )
     assert smtp2_response.status_code == 200
-    
+
     # Add third SMTP settings (should succeed)
     smtp3_response = client.post(
         "/api/settings/smtp",
@@ -169,7 +162,7 @@ def run_tests():
         }
     )
     assert smtp3_response.status_code == 200
-    
+
     # Add fourth SMTP settings (should fail)
     smtp4_response = client.post(
         "/api/settings/smtp",
@@ -184,24 +177,24 @@ def run_tests():
         }
     )
     assert smtp4_response.status_code == 403
-    assert "limit reached" in smtp4_response.json()["detail"]
+    assert smtp4_response.json()["detail"] == "You do not have permission to perform this action."
     print("SMTP Limit (Pro) OK.")
-    
+
     # 6. Test Campaigns and Custom Header Recipient Ingestion
     print("Testing Recipient Personalization and Campaign Scheduling...")
     # Fetch Senders list to get a valid sender_id
     senders_res = client.get("/api/settings/smtp", headers=headers)
     sender_id = senders_res.json()[0]["id"]
-    
+
     # Create campaign with a CSV containing custom headers
     csv_content = (
         "email,company,first_name,last_name,role,custom_field_one\n"
         "lead1@example.com,Google,Sundar,Pichai,CEO,ValueOne\n"
         "lead2@example.com,Apple,Tim,Cook,CEO,ValueTwo\n"
     )
-    
+
     csv_file = ("contacts.csv", csv_content, "text/csv")
-    
+
     camp_res = client.post(
         "/api/campaigns",
         headers=headers,
@@ -215,7 +208,7 @@ def run_tests():
     )
     assert camp_res.status_code == 200
     camp_id = camp_res.json()["campaign_id"]
-    
+
     # Query database and verify custom fields
     db = SessionLocal()
     recipients = db.query(Recipient).filter(Recipient.campaign_id == camp_id).all()
@@ -226,7 +219,7 @@ def run_tests():
     # Verify extra_data JSON contains custom_field_one
     extra1 = json.loads(recipients[0].extra_data)
     assert extra1.get("custom_field_one") == "ValueOne"
-    
+
     assert recipients[1].first_name == "Tim"
     assert recipients[1].last_name == "Cook"
     assert recipients[1].role == "CEO"
@@ -234,7 +227,7 @@ def run_tests():
     assert extra2.get("custom_field_one") == "ValueTwo"
     db.close()
     print("Recipient Personalization OK.")
-    
+
     # 7. Test Immediate Start Action
     print("Testing Immediate Start Action...")
     # Start campaign
@@ -245,13 +238,13 @@ def run_tests():
     )
     assert start_res.status_code == 200
     assert start_res.json()["status"] == "running"
-    
+
     # Verify DB status is running
     db = SessionLocal()
     camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
     assert camp.status in ("running", "completed")
     db.close()
-    
+
     # Cancel action should not be supported / raise error
     cancel_res = client.post(
         f"/api/campaigns/{camp_id}/action",
@@ -282,7 +275,7 @@ def run_tests():
         }
     )
     assert update_res.status_code == 200
-    
+
     db = SessionLocal()
     camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
     assert camp.status == "completed"
@@ -299,7 +292,7 @@ def run_tests():
         }
     )
     assert add_rec_res.status_code == 200
-    
+
     db = SessionLocal()
     camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
     assert camp.status == "paused"
@@ -325,7 +318,7 @@ def run_tests():
         files={"contacts_csv": csv_file_new}
     )
     assert csv_res.status_code == 200
-    
+
     db = SessionLocal()
     camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
     assert camp.status == "paused"
@@ -351,13 +344,13 @@ def run_tests():
         files={"contacts_csv": csv_file_dup}
     )
     assert csv_res_dup.status_code == 200
-    
+
     db = SessionLocal()
     camp = db.query(Campaign).filter(Campaign.id == camp_id).first()
     assert camp.status == "completed"
     db.close()
     print("Completed Campaign Safety Guardrails OK.")
-    
+
     # 8. Test Trial Expiration check (402)
     print("Testing Trial Expiry (402)...")
     # Set User back to trial and set trial_expires_at to 1 hour ago
@@ -367,7 +360,7 @@ def run_tests():
     user.trial_expires_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(hours=1)
     db.commit()
     db.close()
-    
+
     # Refresh token to obtain a token reflecting the expired database state
     login_response_exp = client.post(
         "/api/auth/login",
@@ -380,7 +373,7 @@ def run_tests():
     assert exp_res.status_code == 402
     assert exp_res.json()["detail"] == "trial_expired"
     print("Trial Expiry (402) OK.")
-    
+
     # 9. Test Token Refresh
     print("Testing Token Refresh...")
     # Get refresh token cookie from login_response
@@ -392,7 +385,7 @@ def run_tests():
     user.trial_expires_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=30)
     db.commit()
     db.close()
-    
+
     refresh_res = client.post("/api/auth/refresh", cookies=cookies)
     assert refresh_res.status_code == 200
     refresh_json = refresh_res.json()
@@ -403,7 +396,7 @@ def run_tests():
     # 10. Test Campaign Limits (Trial = 3 campaigns)
     print("Testing Campaign Limits (Trial plan)...")
     headers_active = {"Authorization": f"Bearer {refresh_json['access_token']}"}
-    
+
     # Clean up existing campaigns first
     db = SessionLocal()
     db.query(Campaign).filter(Campaign.user_id == user_id).delete()
@@ -415,7 +408,7 @@ def run_tests():
         user.campaign_save_count = 0
     db.commit()
     db.close()
-    
+
     # Create 3 campaigns
     for idx in range(3):
         create_res = client.post(
@@ -442,7 +435,7 @@ def run_tests():
         }
     )
     assert create4_res.status_code == 403
-    assert "limit" in create4_res.json()["detail"].lower()
+    assert create4_res.json()["detail"] == "You do not have permission to perform this action."
     print("Campaign limits (Trial) OK.")
 
     # 11. Test Account Suspension (is_active = False)
@@ -452,16 +445,16 @@ def run_tests():
     user.is_active = False
     db.commit()
     db.close()
-    
+
     # Try calling api - should fail with 403
     susp_res = client.get("/api/campaigns", headers=headers_active)
     assert susp_res.status_code == 403
-    assert "suspended" in susp_res.json()["detail"]
+    assert susp_res.json()["detail"] == "You do not have permission to perform this action."
     print("Account Suspension OK.")
-    
+
     # 12. Test Admin Panel Endpoints
     print("Testing Admin Panel Endpoints...")
-    
+
     # Create an admin user directly in DB
     db = SessionLocal()
     admin_email = "admin_test@example.com"
@@ -469,7 +462,7 @@ def run_tests():
     if existing_admin:
         db.delete(existing_admin)
         db.commit()
-        
+
     from auth import get_password_hash
     new_admin = User(
         email=admin_email,
@@ -482,7 +475,7 @@ def run_tests():
     db.add(new_admin)
     db.commit()
     db.close()
-    
+
     # Login as admin
     admin_login_res = client.post(
         "/api/auth/login",
@@ -491,11 +484,11 @@ def run_tests():
     assert admin_login_res.status_code == 200
     admin_access_token = admin_login_res.json()["access_token"]
     admin_headers = {"Authorization": f"Bearer {admin_access_token}"}
-    
+
     # Regular user tries to access admin stats (should get 403)
     user_stats_res = client.get("/api/admin/stats", headers=headers_active)
     assert user_stats_res.status_code == 403
-    
+
     # Admin accesses stats (should get 200)
     admin_stats_res = client.get("/api/admin/stats", headers=admin_headers)
     assert admin_stats_res.status_code == 200
@@ -505,21 +498,22 @@ def run_tests():
     assert "active_campaigns" in stats_json
     assert "emails_sent_today" in stats_json
     assert "plan_limits" in stats_json
-    
+
     # Admin lists users
     users_res = client.get("/api/admin/users", headers=admin_headers)
     assert users_res.status_code == 200
     users_json = users_res.json()
-    assert len(users_json) >= 2 # at least admin and regular test user
-    
+    users_list = users_json["users"]
+    assert len(users_list) >= 2 # at least admin and regular test user
+
     # Find our test user's ID
     regular_user_id = None
-    for u in users_json:
+    for u in users_list:
         if u["email"] == test_email:
             regular_user_id = u["id"]
             break
     assert regular_user_id is not None
-    
+
     # Admin updates regular user's plan to pro and is_active to True
     update_res = client.patch(
         f"/api/admin/users/{regular_user_id}",
@@ -529,13 +523,13 @@ def run_tests():
     assert update_res.status_code == 200
     assert update_res.json()["plan"] == "pro"
     assert update_res.json()["is_active"] is True
-    
+
     # Verify regular user plan changed to pro in DB
     db = SessionLocal()
     reg_user_db = db.query(User).filter(User.id == regular_user_id).first()
     assert reg_user_db.plan == "pro"
     db.close()
-    
+
     # Admin updates global plan settings
     settings_patch_res = client.patch(
         "/api/admin/settings",
@@ -546,14 +540,16 @@ def run_tests():
         }
     )
     assert settings_patch_res.status_code == 200
-    from config import PLAN_LIMITS as plan_limits_obj
-    assert plan_limits_obj["trial"]["max_campaigns"] == 5
-    assert plan_limits_obj["trial"]["max_smtp_accounts"] == 2
-    
+    db = SessionLocal()
+    trial_quota = db.query(PlanQuota).filter(PlanQuota.plan == "trial").first()
+    assert trial_quota.max_campaigns == 5
+    assert trial_quota.max_smtp_accounts == 2
+    db.close()
+
     # Admin gets campaigns list
     campaigns_res = client.get("/api/admin/campaigns", headers=admin_headers)
     assert campaigns_res.status_code == 200
-    
+
     # Admin tries to update own role/active status (should fail with 400)
     db = SessionLocal()
     my_id = db.query(User).filter(User.email == admin_email).first().id
@@ -564,7 +560,7 @@ def run_tests():
         json={"role": "user"}
     )
     assert self_update_res.status_code == 400
-    
+
     # Clean up admin user
     db = SessionLocal()
     admin_user = db.query(User).filter(User.email == admin_email).first()
@@ -572,9 +568,9 @@ def run_tests():
         db.delete(admin_user)
         db.commit()
     db.close()
-    
+
     print("Admin Panel Endpoints OK.")
-    
+
     # 13. Test AI Template Generation System & Library CRUD
     print("Testing AI Template Generation System Endpoint...")
     # Update test user's plan to pro so they can access AI Template Generator
@@ -679,7 +675,7 @@ def run_tests():
         db.delete(user)
         db.commit()
     db.close()
-    
+
     print("\nALL PROGRAMMATIC API TESTS COMPLETED SUCCESSFULLY!")
 
 if __name__ == '__main__':

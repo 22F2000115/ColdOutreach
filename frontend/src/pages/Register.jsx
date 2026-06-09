@@ -1,24 +1,31 @@
+// Registration page rendering the signup form and brand panel.
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+
 import { useAuth } from '../App';
 import logoLight from '../assets/logo-light.png';
 import logoDark from '../assets/logo-dark.png';
 
 export default function Register() {
-  const { theme, toggleTheme, login } = useAuth();
-  const [email,           setEmail]           = useState('');
-  const [password,        setPassword]        = useState('');
+  // useState hooks
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error,           setError]           = useState('');
-  const [animateShake,    setAnimateShake]    = useState(false);
-  const [success,         setSuccess]         = useState(false);
-  const [loading,         setLoading]         = useState(false);
+  const [error, setError] = useState('');
+  const [animateShake, setAnimateShake] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const { theme, toggleTheme, login } = useAuth();
   const navigate = useNavigate();
 
+  // useEffect hooks
   useEffect(() => {
+    // Empty dependency array: set page title once on component mount
     document.title = 'Create Account - ColdOutreach';
   }, []);
 
+  // Handler and helper functions
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -28,7 +35,7 @@ export default function Register() {
       setTimeout(() => setAnimateShake(false), 400);
       return;
     }
-    setLoading(true);
+    setSubmitting(true);
     try {
       // 1. Register
       const fd = new FormData();
@@ -44,11 +51,11 @@ export default function Register() {
       navigate('/');
     } catch (err) {
       setSuccess(false);
-      setError(err.response?.data?.detail || 'Registration failed. Try a different email.');
+      setError(err.response?.data?.detail || 'Something went wrong. Please try again.');
       setAnimateShake(true);
       setTimeout(() => setAnimateShake(false), 400);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -109,10 +116,10 @@ export default function Register() {
 
         {/* Brand Header */}
         <div style={{ zIndex: 1, display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <img 
-            src={logoDark} 
-            alt="ColdOutreach Logo" 
-            style={{ height: '26px', width: 'auto', display: 'block', objectFit: 'contain' }} 
+          <img
+            src={logoDark}
+            alt="ColdOutreach Logo"
+            style={{ height: '26px', width: 'auto', display: 'block', objectFit: 'contain' }}
           />
           <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.4rem', fontWeight: 900, letterSpacing: '-0.02em', transform: 'translateY(2px)' }}>
             <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'rgba(255,255,255,0.9)' }}>Outreach</span>
@@ -174,10 +181,10 @@ export default function Register() {
         <div style={{ maxWidth: '400px', width: '100%', animation: 'scaleIn 0.3s var(--ease-spring)' }}>
           {/* Brand header on Mobile only */}
           <div className="mobile-only-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-            <img 
-              src={theme === 'dark' ? logoDark : logoLight} 
-              alt="ColdOutreach Logo" 
-              style={{ height: '64px', width: 'auto', display: 'block', objectFit: 'contain' }} 
+            <img
+              src={theme === 'dark' ? logoDark : logoLight}
+              alt="ColdOutreach Logo"
+              style={{ height: '64px', width: 'auto', display: 'block', objectFit: 'contain' }}
             />
             <div style={{ fontFamily: 'var(--font-header)', fontSize: '2rem', fontWeight: 900, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ color: 'var(--logo-blue)' }}>Cold</span><span style={{ color: 'var(--logo-dark)' }}>Outreach</span>
@@ -201,7 +208,7 @@ export default function Register() {
                 <label className="form-label">Email Address</label>
                 <div style={{ position: 'relative' }}>
                   <input type="email" className="form-control" placeholder="name@company.com"
-                    value={email} onChange={e => setEmail(e.target.value)} required disabled={loading || success} autoFocus style={{ paddingLeft: '38px' }} />
+                    value={email} onChange={e => setEmail(e.target.value)} required disabled={submitting || success} autoFocus style={{ paddingLeft: '38px' }} />
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)' }}>
                     <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
                     <polyline points="22,6 12,13 2,6"></polyline>
@@ -212,7 +219,7 @@ export default function Register() {
                 <label className="form-label">Password</label>
                 <div style={{ position: 'relative' }}>
                   <input type="password" className="form-control" placeholder="Min. 8 characters"
-                    value={password} onChange={e => setPassword(e.target.value)} required disabled={loading || success} style={{ paddingLeft: '38px' }} />
+                    value={password} onChange={e => setPassword(e.target.value)} required disabled={submitting || success} style={{ paddingLeft: '38px' }} />
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)' }}>
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
@@ -223,15 +230,15 @@ export default function Register() {
                 <label className="form-label">Confirm Password</label>
                 <div style={{ position: 'relative' }}>
                   <input type="password" className="form-control" placeholder="••••••••"
-                    value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required disabled={loading || success} style={{ paddingLeft: '38px' }} />
+                    value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required disabled={submitting || success} style={{ paddingLeft: '38px' }} />
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)' }}>
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                   </svg>
                 </div>
               </div>
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '12px', padding: '11px', gap: '8px' }} disabled={loading || success}>
-                {loading ? (
+              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '12px', padding: '11px', gap: '8px' }} disabled={submitting || success}>
+                {submitting ? (
                   <>
                     <svg className="spinner" viewBox="0 0 50 50" style={{ width: '18px', height: '18px', animation: 'spin 1s linear infinite' }}>
                       <circle className="path" cx="25" cy="25" r="20" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" style={{ strokeDasharray: '1, 150', strokeDashoffset: 0, animation: 'dash 1.5s ease-in-out infinite' }}></circle>

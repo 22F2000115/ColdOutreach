@@ -1,3 +1,8 @@
+/**
+ * OutreachAI page allows generating personalized outreach templates using AI,
+ * fine-tuning tone/length constraints, spam analysis, and saving templates to a library.
+ */
+
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth, api } from '../App';
 import { Navigate } from 'react-router-dom';
@@ -126,77 +131,66 @@ async function copyToClipboard(text, setCopied) {
   }
 }
 
+function convertPlainTextToHtml(text) {
+  if (!text) return '';
+  const normalized = text.replace(/\r\n/g, '\n');
+  return normalized
+    .split(/\n\n+/)
+    .map(para => {
+      const lineFormatted = para.split('\n').join('<br />');
+      return `<p>${lineFormatted}</p>`;
+    })
+    .join('');
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function OutreachAI() {
   const { user, theme } = useAuth();
-  const isDark = theme === 'dark';
 
-  // Navigation tabs
+  // State hooks
   const [activeTab, setActiveTab] = useState('generator');
-
-  // Input states
   const [role, setRole] = useState('');
   const [objective, setObjective] = useState('');
   const [targetAudience, setTargetAudience] = useState('');
   const [skillsOrOffer, setSkillsOrOffer] = useState('');
   const [additionalContext, setAdditionalContext] = useState('');
   const [senderName, setSenderName] = useState(user?.email?.split('@')[0] || '');
-
-  // Advanced template controls
   const [tone, setTone] = useState('professional');
   const [length, setLength] = useState('medium');
   const [formality, setFormality] = useState('formal');
   const [ctaStrength, setCtaStrength] = useState('soft');
   const [writingStyle, setWritingStyle] = useState('conversational');
-
-  // Generation preview states
   const [generatedData, setGeneratedData] = useState(null);
   const [selectedSubjectIndex, setSelectedSubjectIndex] = useState(0);
   const [selectedVariationIndex, setSelectedVariationIndex] = useState(0);
   const [editedSubject, setEditedSubject] = useState('');
   const [editedBody, setEditedBody] = useState('');
-
-  // Copy-to-clipboard states
   const [copiedSubject, setCopiedSubject] = useState(false);
   const [copiedBody, setCopiedBody] = useState(false);
-
-  // Library & campaigns states
   const [templates, setTemplates] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState('');
   const [libraryCampaignSelections, setLibraryCampaignSelections] = useState({});
-
-  // Loading / notification states
-  const [loading, setLoading] = useState(false);
-  const [loadingMoreSubjects, setLoadingMoreSubjects] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [submittingGeneration, setSubmittingGeneration] = useState(false);
+  const [submittingMoreSubjects, setSubmittingMoreSubjects] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-
-  // Modals state
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState('');
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
 
-  // Fetch saved templates & campaigns
-  const fetchData = async () => {
-    try {
-      const [campRes, tempRes] = await Promise.all([
-        api.get('/api/campaigns'),
-        api.get('/api/templates')
-      ]);
-      const eligible = (campRes.data || []).filter(
-        c => c.status === 'draft' || c.status === 'paused' || c.status === 'completed'
-      );
-      setCampaigns(eligible);
-      setTemplates(tempRes.data || []);
-    } catch (err) {
-      console.error('Failed to load initial data:', err);
-    }
-  };
+  // Derived values/variables
+  const isDark = theme === 'dark';
+  const detectedSpam = checkSpam(editedSubject, editedBody);
+  const wordCount = countWords(editedBody);
+  const lengthTarget = LENGTH_TARGETS[length] || LENGTH_TARGETS.medium;
+  const wordCountOk = wordCount >= lengthTarget.min && wordCount <= lengthTarget.max;
+  const wordCountOver = wordCount > lengthTarget.max;
 
+  // useEffect hooks
   useEffect(() => {
     if (user?.plan !== 'trial') {
       fetchData();
@@ -213,6 +207,23 @@ export default function OutreachAI() {
       setEditedBody(activeBody);
     }
   }, [generatedData, selectedSubjectIndex, selectedVariationIndex]);
+
+  // Handler and helper functions
+  const fetchData = async () => {
+    try {
+      const [campRes, tempRes] = await Promise.all([
+        api.get('/api/campaigns'),
+        api.get('/api/templates')
+      ]);
+      const eligible = (campRes.data || []).filter(
+        c => c.status === 'draft' || c.status === 'paused' || c.status === 'completed'
+      );
+      setCampaigns(eligible);
+      setTemplates(tempRes.data || []);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
+    }
+  };
 
   // Apply a quick-start preset
   const applyPreset = (preset) => {
@@ -237,7 +248,7 @@ export default function OutreachAI() {
       return;
     }
 
-    setLoading(true);
+    setSubmittingGeneration(true);
     setError(null);
     setSuccess(null);
     setGeneratedData(null);
@@ -260,9 +271,9 @@ export default function OutreachAI() {
       setSelectedSubjectIndex(0);
       setSelectedVariationIndex(0);
     } catch (err) {
-      setError(err.response?.data?.detail || 'An error occurred during AI template generation.');
+      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
     } finally {
-      setLoading(false);
+      setSubmittingGeneration(false);
     }
   };
 
@@ -270,7 +281,7 @@ export default function OutreachAI() {
   const handleGenerateMoreSubjects = async () => {
     if (!generatedData || !role.trim()) return;
 
-    setLoadingMoreSubjects(true);
+    setSubmittingMoreSubjects(true);
     setError(null);
 
     try {
@@ -292,9 +303,9 @@ export default function OutreachAI() {
         setSelectedSubjectIndex(generatedData.subjects.length);
       }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to generate more subjects.');
+      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
     } finally {
-      setLoadingMoreSubjects(false);
+      setSubmittingMoreSubjects(false);
     }
   };
 
@@ -305,7 +316,7 @@ export default function OutreachAI() {
     const campaign = campaigns.find(c => c.id === parseInt(selectedCampaignId));
     if (!campaign) return;
 
-    setSaving(true);
+    setSubmitting(true);
     setError(null);
     setSuccess(null);
 
@@ -313,7 +324,7 @@ export default function OutreachAI() {
       const fd = new FormData();
       fd.append('name', campaign.name);
       fd.append('subject_template', editedSubject.trim());
-      fd.append('body_template', editedBody.trim());
+      fd.append('body_template', convertPlainTextToHtml(editedBody.trim()));
       if (campaign.sender_id) {
         fd.append('sender_id', campaign.sender_id);
       }
@@ -322,9 +333,9 @@ export default function OutreachAI() {
       setSuccess(`Successfully updated campaign "${campaign.name}" with the template!`);
       fetchData();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to sync template to campaign.');
+      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
@@ -333,7 +344,7 @@ export default function OutreachAI() {
     e.preventDefault();
     if (!saveTemplateName.trim() || !editedBody) return;
 
-    setSaving(true);
+    setSubmitting(true);
     setError(null);
     setSuccess(null);
 
@@ -349,9 +360,9 @@ export default function OutreachAI() {
       setShowSaveModal(false);
       fetchData();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to save template to library.');
+      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
 
@@ -363,8 +374,8 @@ export default function OutreachAI() {
       await api.delete(`/api/templates/${templateId}`);
       setSuccess('Template deleted successfully.');
       fetchData();
-    } catch {
-      setError('Failed to delete template.');
+    } catch (err) {
+      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
     }
   };
 
@@ -394,8 +405,8 @@ export default function OutreachAI() {
       setShowEditModal(false);
       setEditingTemplate(null);
       fetchData();
-    } catch {
-      setError('Failed to update template.');
+    } catch (err) {
+      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
     }
   };
 
@@ -406,7 +417,7 @@ export default function OutreachAI() {
     const campaign = campaigns.find(c => c.id === parseInt(campaignId));
     if (!campaign) return;
 
-    setSaving(true);
+    setSubmitting(true);
     setError(null);
     setSuccess(null);
 
@@ -414,7 +425,7 @@ export default function OutreachAI() {
       const fd = new FormData();
       fd.append('name', campaign.name);
       fd.append('subject_template', template.subject);
-      fd.append('body_template', template.body);
+      fd.append('body_template', convertPlainTextToHtml(template.body));
       if (campaign.sender_id) {
         fd.append('sender_id', campaign.sender_id);
       }
@@ -423,18 +434,11 @@ export default function OutreachAI() {
       setSuccess(`Successfully injected template "${template.name}" into campaign "${campaign.name}"!`);
       setLibraryCampaignSelections(prev => ({ ...prev, [template.id]: '' }));
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to inject template into campaign.');
+      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   };
-
-  // Computed values
-  const detectedSpam = checkSpam(editedSubject, editedBody);
-  const wordCount = countWords(editedBody);
-  const lengthTarget = LENGTH_TARGETS[length] || LENGTH_TARGETS.medium;
-  const wordCountOk = wordCount >= lengthTarget.min && wordCount <= lengthTarget.max;
-  const wordCountOver = wordCount > lengthTarget.max;
 
   if (user?.plan === 'trial') {
     return <Navigate to="/" replace />;
@@ -708,9 +712,9 @@ export default function OutreachAI() {
                   onClick={handleGenerate}
                   className="btn btn-primary"
                   style={{ width: '100%', height: '42px', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                  disabled={loading}
+                  disabled={submittingGeneration}
                 >
-                  {loading ? (
+                  {submittingGeneration ? (
                     <><span className="sending-dot" /> Generating Custom Template...</>
                   ) : (
                     <>
@@ -731,7 +735,7 @@ export default function OutreachAI() {
           <div className="card" style={{ padding: '24px', borderRadius: '12px', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'flex-start' }}>
             <h2 className="section-title" style={{ marginBottom: '18px' }}>Generated Template Package</h2>
 
-            {loading && (
+            {submittingGeneration && (
               <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '128px 0' }}>
                 <div style={{ animation: 'pulsing 1.5s infinite alternate', width: '64px', height: '64px', borderRadius: '50%', background: 'var(--primary-subtle)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -745,7 +749,7 @@ export default function OutreachAI() {
               </div>
             )}
 
-            {!loading && !generatedData && (
+            {!submittingGeneration && !generatedData && (
               <div className="empty-state" style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '128px 0' }}>
                 <div className="empty-state-icon" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '56px', height: '56px', borderRadius: '50%', background: 'var(--muted)', color: 'var(--muted-foreground)', margin: '0 auto 16px auto' }}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -761,7 +765,7 @@ export default function OutreachAI() {
               </div>
             )}
 
-            {!loading && generatedData && (
+            {!submittingGeneration && generatedData && (
               <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, gap: '16px' }}>
                 {/* Detected Placeholders list */}
                 <div>
@@ -785,7 +789,7 @@ export default function OutreachAI() {
                     <button
                       type="button"
                       onClick={handleGenerateMoreSubjects}
-                      disabled={loadingMoreSubjects}
+                      disabled={submittingMoreSubjects}
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',
@@ -798,14 +802,14 @@ export default function OutreachAI() {
                         fontSize: '0.72rem',
                         fontWeight: 700,
                         color: 'var(--primary)',
-                        cursor: loadingMoreSubjects ? 'not-allowed' : 'pointer',
-                        opacity: loadingMoreSubjects ? 0.6 : 1,
+                        cursor: submittingMoreSubjects ? 'not-allowed' : 'pointer',
+                        opacity: submittingMoreSubjects ? 0.6 : 1,
                         transition: 'all 0.15s'
                       }}
-                      onMouseEnter={e => !loadingMoreSubjects && (e.currentTarget.style.background = 'var(--primary-border)')}
+                      onMouseEnter={e => !submittingMoreSubjects && (e.currentTarget.style.background = 'var(--primary-border)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'var(--primary-subtle)')}
                     >
-                      {loadingMoreSubjects ? (
+                      {submittingMoreSubjects ? (
                         <><span className="sending-dot" style={{ width: '6px', height: '6px' }} /> Generating...</>
                       ) : (
                         <>
@@ -997,7 +1001,7 @@ export default function OutreachAI() {
                     <button
                       className="btn btn-secondary"
                       onClick={() => handleGenerate()}
-                      disabled={loading}
+                      disabled={submittingGeneration}
                       style={{ padding: '0 16px', height: '40px', fontSize: '0.85rem', gap: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -1024,10 +1028,10 @@ export default function OutreachAI() {
                       <button
                         className="btn btn-primary"
                         onClick={handleUseInCampaign}
-                        disabled={saving || !selectedCampaignId}
+                        disabled={submitting || !selectedCampaignId}
                         style={{ flexShrink: 0, padding: '0 16px', height: '40px' }}
                       >
-                        {saving ? 'Syncing...' : 'Insert into Campaign'}
+                        {submitting ? 'Syncing...' : 'Insert into Campaign'}
                       </button>
                     </div>
                   </div>
@@ -1092,7 +1096,7 @@ export default function OutreachAI() {
                       <strong>Subject:</strong> {t.subject}
                     </div>
 
-                    <p style={{ margin: '10px 0 0 0', fontSize: '0.78rem', color: 'var(--muted-foreground)', display: '-webkit-box', WebkitLineClamp: '3', WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.5' }}>
+                    <p style={{ margin: '10px 0 0 0', fontSize: '0.78rem', color: 'var(--muted-foreground)', display: '-webkit-box', WebkitLineClamp: '3', WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
                       {t.body}
                     </p>
 
@@ -1129,7 +1133,7 @@ export default function OutreachAI() {
                       <button
                         className="btn btn-primary"
                         style={{ height: '32px', fontSize: '0.76rem', padding: '0 10px', flexShrink: 0 }}
-                        disabled={saving || !libraryCampaignSelections[t.id]}
+                        disabled={submitting || !libraryCampaignSelections[t.id]}
                         onClick={() => handleDeployLibraryTemplate(t)}
                       >
                         Inject
@@ -1180,7 +1184,7 @@ export default function OutreachAI() {
                       </div>
                     )}
                     {editedBody && (
-                      <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--muted-foreground)', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: '4', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--muted-foreground)', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: '4', WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap' }}>
                         {editedBody}
                       </p>
                     )}
@@ -1191,8 +1195,8 @@ export default function OutreachAI() {
                 <button type="button" className="btn btn-secondary" onClick={() => setShowSaveModal(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={saving || !saveTemplateName.trim()}>
-                  {saving ? 'Saving...' : 'Save Template'}
+                <button type="submit" className="btn btn-primary" disabled={submitting || !saveTemplateName.trim()}>
+                  {submitting ? 'Saving...' : 'Save Template'}
                 </button>
               </div>
             </form>
@@ -1245,7 +1249,7 @@ export default function OutreachAI() {
                 <button type="button" className="btn btn-secondary" onClick={() => { setShowEditModal(false); setEditingTemplate(null); }}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
                   Save Changes
                 </button>
               </div>

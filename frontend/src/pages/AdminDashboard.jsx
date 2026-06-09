@@ -1,3 +1,8 @@
+/**
+ * AdminDashboard page provides metrics on users, campaigns, global limits configuration,
+ * and support contact details management.
+ */
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, useAuth } from '../App';
@@ -11,7 +16,7 @@ function formatRelativeTime(dateString) {
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    
+
     if (diffMs < 0) return 'Just now';
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
@@ -35,7 +40,13 @@ export default function AdminDashboard() {
   const [campaignQuery, setCampaignQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ text: '', type: '' });
-  const [savingSettings, setSavingSettings] = useState(false);
+  const [submittingSettings, setSubmittingSettings] = useState(false);
+
+  // Pagination states
+  const [userPage, setUserPage] = useState(1);
+  const [userTotalPages, setUserTotalPages] = useState(1);
+  const [campaignPage, setCampaignPage] = useState(1);
+  const [campaignTotalPages, setCampaignTotalPages] = useState(1);
 
   // Contact details state
   const [contacts, setContacts] = useState([]);
@@ -43,7 +54,7 @@ export default function AdminDashboard() {
   const [contactValue, setContactValue] = useState('');
   const [contactLabel, setContactLabel] = useState('');
   const [editingContactId, setEditingContactId] = useState(null);
-  const [savingContact, setSavingContact] = useState(false);
+  const [submittingContact, setSubmittingContact] = useState(false);
   const [confirmContactDeleteId, setConfirmContactDeleteId] = useState(null);
   const [pendingUserUpdate, setPendingUserUpdate] = useState(null);
 
@@ -66,6 +77,24 @@ export default function AdminDashboard() {
   // Modal confirmation
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
+  // useEffect hooks
+  useEffect(() => {
+    // Run only once on mount to fetch initial admin stats and contact detail list
+    document.title = 'Admin Dashboard - ColdOutreach';
+    Promise.all([fetchStats(), fetchContacts()]).finally(() => {
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    fetchUsers(userPage, userQuery);
+  }, [userPage, userQuery]);
+
+  useEffect(() => {
+    fetchCampaigns(campaignPage, campaignQuery);
+  }, [campaignPage, campaignQuery]);
+
+  // Handler and helper functions
   const fetchStats = async () => {
     try {
       const res = await api.get('/api/admin/stats');
@@ -88,28 +117,27 @@ export default function AdminDashboard() {
         setProQuotaSave(res.data.plan_quotas.pro?.save_limit ?? 999999);
       }
     } catch (e) {
-      console.error(e);
-      setMessage({ text: 'Failed to fetch stats', type: 'error' });
+      setMessage({ text: e.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
     }
   };
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (page = 1, search = '') => {
     try {
-      const res = await api.get('/api/admin/users');
-      setUsers(res.data || []);
+      const res = await api.get(`/api/admin/users?page=${page}&limit=10&search=${search}`);
+      setUsers(res.data.users || []);
+      setUserTotalPages(res.data.pages || 1);
     } catch (e) {
-      console.error(e);
-      setMessage({ text: 'Failed to fetch users', type: 'error' });
+      setMessage({ text: e.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
     }
   };
 
-  const fetchCampaigns = async () => {
+  const fetchCampaigns = async (page = 1, search = '') => {
     try {
-      const res = await api.get('/api/admin/campaigns');
-      setCampaigns(res.data || []);
+      const res = await api.get(`/api/admin/campaigns?page=${page}&limit=10&search=${search}`);
+      setCampaigns(res.data.campaigns || []);
+      setCampaignTotalPages(res.data.pages || 1);
     } catch (e) {
-      console.error(e);
-      setMessage({ text: 'Failed to fetch campaigns', type: 'error' });
+      setMessage({ text: e.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
     }
   };
 
@@ -118,21 +146,25 @@ export default function AdminDashboard() {
       const res = await api.get('/api/contact-details');
       setContacts(res.data || []);
     } catch (e) {
-      console.error(e);
-      setMessage({ text: 'Failed to fetch contact details', type: 'error' });
+      setMessage({ text: e.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
     }
   };
 
   const loadData = async () => {
     setLoading(true);
     setMessage({ text: '', type: '' });
-    await Promise.all([fetchStats(), fetchUsers(), fetchCampaigns(), fetchContacts()]);
+    await Promise.all([
+      fetchStats(),
+      fetchUsers(userPage, userQuery),
+      fetchCampaigns(campaignPage, campaignQuery),
+      fetchContacts()
+    ]);
     setLoading(false);
   };
 
   const handleSaveContact = async (e) => {
     e.preventDefault();
-    setSavingContact(true);
+    setSubmittingContact(true);
     setMessage({ text: '', type: '' });
     try {
       const payload = {
@@ -152,10 +184,10 @@ export default function AdminDashboard() {
       }
       resetContactForm();
     } catch (err) {
-      const errDetail = err.response?.data?.detail || 'Failed to save contact';
+      const errDetail = err.response?.data?.detail || "Something went wrong. Please try again.";
       setMessage({ text: typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail), type: 'error' });
     } finally {
-      setSavingContact(false);
+      setSubmittingContact(false);
     }
   };
 
@@ -173,7 +205,7 @@ export default function AdminDashboard() {
       setMessage({ text: 'Contact detail deleted successfully', type: 'success' });
       setConfirmContactDeleteId(null);
     } catch (err) {
-      const errDetail = err.response?.data?.detail || 'Failed to delete contact';
+      const errDetail = err.response?.data?.detail || "Something went wrong. Please try again.";
       setMessage({ text: typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail), type: 'error' });
       setConfirmContactDeleteId(null);
     }
@@ -186,11 +218,6 @@ export default function AdminDashboard() {
     setContactLabel('');
   };
 
-  useEffect(() => {
-    document.title = 'Admin Dashboard - ColdOutreach';
-    loadData();
-  }, []);
-
   const handleUpdateUser = async (userId, fields) => {
     try {
       const res = await api.patch(`/api/admin/users/${userId}`, fields);
@@ -198,7 +225,7 @@ export default function AdminDashboard() {
       setMessage({ text: 'User updated successfully', type: 'success' });
       fetchStats(); // Update counts
     } catch (e) {
-      const errDetail = e.response?.data?.detail || 'Failed to update user';
+      const errDetail = e.response?.data?.detail || "Something went wrong. Please try again.";
       setMessage({ text: typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail), type: 'error' });
     }
   };
@@ -211,7 +238,7 @@ export default function AdminDashboard() {
       setConfirmDeleteId(null);
       fetchStats(); // Update counts
     } catch (e) {
-      const errDetail = e.response?.data?.detail || 'Failed to delete user';
+      const errDetail = e.response?.data?.detail || "Something went wrong. Please try again.";
       setMessage({ text: typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail), type: 'error' });
       setConfirmDeleteId(null);
     }
@@ -219,7 +246,7 @@ export default function AdminDashboard() {
 
   const handleSaveSettings = async (e) => {
     e.preventDefault();
-    setSavingSettings(true);
+    setSubmittingSettings(true);
     setMessage({ text: '', type: '' });
     try {
       const payload = {
@@ -248,21 +275,16 @@ export default function AdminDashboard() {
       setMessage({ text: 'Global plan limits updated successfully', type: 'success' });
       fetchStats();
     } catch (e) {
-      const errDetail = e.response?.data?.detail || 'Failed to save settings';
+      const errDetail = e.response?.data?.detail || "Something went wrong. Please try again.";
       setMessage({ text: typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail), type: 'error' });
     } finally {
-      setSavingSettings(false);
+      setSubmittingSettings(false);
     }
   };
 
-  const filteredUsers = users.filter(u =>
-    u.email.toLowerCase().includes(userQuery.toLowerCase())
-  );
+  const filteredUsers = users;
 
-  const filteredCampaigns = campaigns.filter(c =>
-    c.name.toLowerCase().includes(campaignQuery.toLowerCase()) ||
-    c.owner_email.toLowerCase().includes(campaignQuery.toLowerCase())
-  );
+  const filteredCampaigns = campaigns;
 
   if (loading && !stats) {
     return (
@@ -438,13 +460,13 @@ export default function AdminDashboard() {
                 placeholder="Search users by email..."
                 className="form-control"
                 value={userQuery}
-                onChange={e => setUserQuery(e.target.value)}
+                onChange={e => { setUserQuery(e.target.value); setUserPage(1); }}
                 style={{ margin: 0, paddingLeft: '36px' }}
               />
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             </div>
             <span className="badge badge-running" style={{ fontSize: '0.82rem', fontWeight: 600, background: 'var(--surface-hover)', borderColor: 'var(--border-subtle)', color: 'var(--foreground)', height: '40px', display: 'inline-flex', alignItems: 'center', padding: '0 12px', borderRadius: 'var(--radius-sm)' }}>
-              {filteredUsers.length} of {users.length} Users
+              Total Users: {stats?.total_users ?? 0}
             </span>
           </div>
 
@@ -629,6 +651,30 @@ export default function AdminDashboard() {
               </tbody>
             </table>
           </div>
+          {/* Pagination Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderTop: '1px solid var(--border)' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--muted-foreground)' }}>
+              Page {userPage} of {userTotalPages}
+            </span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '6px 12px', fontSize: '0.8rem', height: '32px' }}
+                disabled={userPage <= 1}
+                onClick={() => setUserPage(p => p - 1)}
+              >
+                Previous
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '6px 12px', fontSize: '0.8rem', height: '32px' }}
+                disabled={userPage >= userTotalPages}
+                onClick={() => setUserPage(p => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -643,13 +689,13 @@ export default function AdminDashboard() {
                 placeholder="Filter by campaign name or owner..."
                 className="form-control"
                 value={campaignQuery}
-                onChange={e => setCampaignQuery(e.target.value)}
+                onChange={e => { setCampaignQuery(e.target.value); setCampaignPage(1); }}
                 style={{ margin: 0, paddingLeft: '36px' }}
               />
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)', pointerEvents: 'none' }}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             </div>
             <span className="badge badge-running" style={{ background: 'var(--surface-hover)', borderColor: 'var(--border-subtle)', color: 'var(--foreground)' }}>
-              {filteredCampaigns.length} of {campaigns.length} Campaigns
+              Campaigns
             </span>
           </div>
 
@@ -674,7 +720,7 @@ export default function AdminDashboard() {
                   </tr>
                 ) : (
                   filteredCampaigns.map(c => (
-                    <tr 
+                    <tr
                       key={c.id}
                       onClick={() => navigate(`/campaigns/${c.id}`)}
                       style={{ cursor: 'pointer' }}
@@ -700,6 +746,30 @@ export default function AdminDashboard() {
                 )}
               </tbody>
             </table>
+          </div>
+          {/* Pagination Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderTop: '1px solid var(--border)' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--muted-foreground)' }}>
+              Page {campaignPage} of {campaignTotalPages}
+            </span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '6px 12px', fontSize: '0.8rem', height: '32px' }}
+                disabled={campaignPage <= 1}
+                onClick={() => setCampaignPage(p => p - 1)}
+              >
+                Previous
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{ padding: '6px 12px', fontSize: '0.8rem', height: '32px' }}
+                disabled={campaignPage >= campaignTotalPages}
+                onClick={() => setCampaignPage(p => p + 1)}
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -997,8 +1067,8 @@ export default function AdminDashboard() {
               justifyContent: 'flex-start',
               marginTop: '28px'
             }}>
-              <button type="submit" className="btn btn-primary" style={{ minWidth: '160px' }} disabled={savingSettings}>
-                {savingSettings ? 'Saving Settings...' : 'Save Settings'}
+              <button type="submit" className="btn btn-primary" style={{ minWidth: '160px' }} disabled={submittingSettings}>
+                {submittingSettings ? 'Saving Settings...' : 'Save Settings'}
               </button>
             </div>
           </form>
@@ -1008,7 +1078,7 @@ export default function AdminDashboard() {
       {/* Tab: Contact Details */}
       {activeTab === 'contact' && (
         <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '24px', alignItems: 'start' }}>
-          
+
           {/* Add / Edit Form */}
           <div className="card" style={{ padding: '24px' }}>
             <h2 className="section-title" style={{ marginBottom: '20px' }}>
@@ -1056,8 +1126,8 @@ export default function AdminDashboard() {
               </div>
 
               <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={savingContact}>
-                  {savingContact ? 'Saving…' : editingContactId ? 'Update Contact' : 'Add Contact'}
+                <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={submittingContact}>
+                  {submittingContact ? 'Saving…' : editingContactId ? 'Update Contact' : 'Add Contact'}
                 </button>
                 {editingContactId && (
                   <button type="button" className="btn btn-secondary" onClick={resetContactForm}>

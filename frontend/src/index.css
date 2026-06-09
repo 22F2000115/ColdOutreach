@@ -375,12 +375,12 @@ option {
 
 /* Change Autocomplete background and text color to match active theme colors */
 input:-webkit-autofill,
-input:-webkit-autofill:hover, 
-input:-webkit-autofill:focus, 
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
 input:-webkit-autofill:active,
 .form-control:-webkit-autofill,
-.form-control:-webkit-autofill:hover, 
-.form-control:-webkit-autofill:focus, 
+.form-control:-webkit-autofill:hover,
+.form-control:-webkit-autofill:focus,
 .form-control:-webkit-autofill:active {
   -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset !important;
   -webkit-text-fill-color: var(--foreground) !important;
@@ -589,7 +589,7 @@ input:-webkit-autofill:active,
 }
 .progress-bar-fill {
   height: 100%;
-  background: var(--primary);
+  background: var(--progress-color, var(--primary));
   border-radius: 999px;
   transition: width 0.5s var(--ease-smooth);
 }
@@ -840,7 +840,7 @@ input:-webkit-autofill:active,
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #4f46e5;
+  background: currentColor;
   margin-right: 6px;
   animation: pulse 1.5s infinite;
 }
@@ -1140,12 +1140,12 @@ input:-webkit-autofill:active,
 
 /* â”€â”€ Shimmer & Drag-Drop Custom Extensions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .progress-bar-fill.shimmer {
-  background: linear-gradient(90deg, var(--primary) 25%, rgba(255, 255, 255, 0.3) 50%, var(--primary) 75%);
+  background: linear-gradient(90deg, var(--progress-color, var(--primary)) 25%, rgba(255, 255, 255, 0.3) 50%, var(--progress-color, var(--primary)) 75%);
   background-size: 200% 100%;
   animation: shimmer 2s infinite linear;
 }
 .dark .progress-bar-fill.shimmer, [data-theme="dark"] .progress-bar-fill.shimmer {
-  background: linear-gradient(90deg, var(--primary) 25%, rgba(255, 255, 255, 0.15) 50%, var(--primary) 75%);
+  background: linear-gradient(90deg, var(--progress-color, var(--primary)) 25%, rgba(255, 255, 255, 0.15) 50%, var(--progress-color, var(--primary)) 75%);
   background-size: 200% 100%;
 }
 
@@ -1180,13 +1180,28 @@ input:-webkit-autofill:active,
   border: none !important;
   box-shadow: var(--shadow-sm);
 }
-.campaign-stat-card.accent-indigo { background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-card)); }
-.campaign-stat-card.accent-indigo .metric-value { color: var(--accent-primary); }
-.campaign-stat-card.accent-blue { background: color-mix(in srgb, var(--stat-enqueued) 8%, var(--bg-card)); }
+.campaign-stat-card.accent-indigo {
+  background: color-mix(in srgb, var(--stat-total) 8%, var(--bg-card));
+  --progress-color: var(--stat-total);
+}
+.campaign-stat-card.accent-indigo .metric-value { color: var(--stat-total); }
+
+.campaign-stat-card.accent-blue {
+  background: color-mix(in srgb, var(--stat-enqueued) 8%, var(--bg-card));
+  --progress-color: var(--stat-enqueued);
+}
 .campaign-stat-card.accent-blue .metric-value { color: var(--stat-enqueued); }
-.campaign-stat-card.accent-green { background: color-mix(in srgb, var(--stat-delivered) 8%, var(--bg-card)); }
+
+.campaign-stat-card.accent-green {
+  background: color-mix(in srgb, var(--stat-delivered) 8%, var(--bg-card));
+  --progress-color: var(--stat-delivered);
+}
 .campaign-stat-card.accent-green .metric-value { color: var(--stat-delivered); }
-.campaign-stat-card.accent-red { background: color-mix(in srgb, var(--stat-failures) 8%, var(--bg-card)); }
+
+.campaign-stat-card.accent-red {
+  background: color-mix(in srgb, var(--stat-failures) 8%, var(--bg-card));
+  --progress-color: var(--stat-failures);
+}
 .campaign-stat-card.accent-red .metric-value { color: var(--stat-failures); }
 
 /* â”€â”€ Login Split Layout & Spinner â”€â”€ */
@@ -2103,6 +2118,3 @@ input:checked + .toggle-slider:before {
   font-size: 0.72rem;
   color: var(--text-muted);
 }
-
-
-

@@ -1,6 +1,9 @@
 import json
+import logging
 from sqlalchemy.orm import Session
 from models import ActivityLog
+
+logger = logging.getLogger(__name__)
 
 def log_activity(db: Session, user_id: int, event_type: str, action: str, metadata: dict = None):
     """
@@ -16,8 +19,8 @@ def log_activity(db: Session, user_id: int, event_type: str, action: str, metada
         )
         db.add(entry)
         db.commit()
-    except Exception as e:
-        print(f"Error logging activity: {e}")
+    except Exception as error:
+        logger.exception(f"Error logging activity: {error}")
         try:
             db.rollback()
         except Exception:
