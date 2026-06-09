@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth, api } from '../App';
 import { Navigate } from 'react-router-dom';
+import { getFriendlyError } from '../utils/errors';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -221,7 +222,7 @@ export default function OutreachAI() {
       setCampaigns(eligible);
       setTemplates(tempRes.data || []);
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
+      setError(getFriendlyError(err, "Something went wrong. Please try again."));
     }
   };
 
@@ -271,7 +272,7 @@ export default function OutreachAI() {
       setSelectedSubjectIndex(0);
       setSelectedVariationIndex(0);
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
+      setError(getFriendlyError(err, "Something went wrong. Please try again."));
     } finally {
       setSubmittingGeneration(false);
     }
@@ -303,7 +304,7 @@ export default function OutreachAI() {
         setSelectedSubjectIndex(generatedData.subjects.length);
       }
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
+      setError(getFriendlyError(err, "Something went wrong. Please try again."));
     } finally {
       setSubmittingMoreSubjects(false);
     }
@@ -333,7 +334,7 @@ export default function OutreachAI() {
       setSuccess(`Successfully updated campaign "${campaign.name}" with the template!`);
       fetchData();
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
+      setError(getFriendlyError(err, "Something went wrong. Please try again."));
     } finally {
       setSubmitting(false);
     }
@@ -360,7 +361,7 @@ export default function OutreachAI() {
       setShowSaveModal(false);
       fetchData();
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
+      setError(getFriendlyError(err, "Something went wrong. Please try again."));
     } finally {
       setSubmitting(false);
     }
@@ -375,7 +376,7 @@ export default function OutreachAI() {
       setSuccess('Template deleted successfully.');
       fetchData();
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
+      setError(getFriendlyError(err, "Something went wrong. Please try again."));
     }
   };
 
@@ -406,7 +407,7 @@ export default function OutreachAI() {
       setEditingTemplate(null);
       fetchData();
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
+      setError(getFriendlyError(err, "Something went wrong. Please try again."));
     }
   };
 
@@ -434,7 +435,7 @@ export default function OutreachAI() {
       setSuccess(`Successfully injected template "${template.name}" into campaign "${campaign.name}"!`);
       setLibraryCampaignSelections(prev => ({ ...prev, [template.id]: '' }));
     } catch (err) {
-      setError(err.response?.data?.detail || "Something went wrong. Please try again.");
+      setError(getFriendlyError(err, "Something went wrong. Please try again."));
     } finally {
       setSubmitting(false);
     }

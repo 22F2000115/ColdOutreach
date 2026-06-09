@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 import { api, useAuth } from '../App';
+import { getFriendlyError } from '../utils/errors';
+import UpgradeModal from '../components/UpgradeModal';
 
 export default function Settings() {
   // useState hooks
@@ -22,6 +24,12 @@ export default function Settings() {
   const [testResult, setTestResult] = useState(null);
   const [showTrialBanner, setShowTrialBanner] = useState(true);
 
+  // New UI states
+  const [preset, setPreset] = useState('gmail');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [guideExpanded, setGuideExpanded] = useState(true);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
   // Derived values/variables
   const limit = user?.limits?.max_smtp_accounts ?? (user?.plan === 'pro' ? 3 : 1);
   const isAtLimit = senders.length >= limit && !editingId;
@@ -32,6 +40,18 @@ export default function Settings() {
     document.title = 'Settings - ColdOutreach';
     fetchSenders();
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    const dismissed = localStorage.getItem('guide_collapsed');
+    if (dismissed === 'true') {
+      setGuideExpanded(false);
+    } else if (senders.length > 0) {
+      setGuideExpanded(false);
+    } else {
+      setGuideExpanded(true);
+    }
+  }, [senders.length, loading]);
 
   // Handler and helper functions
   const fetchSenders = async () => {
@@ -46,15 +66,25 @@ export default function Settings() {
     }
   };
 
-  const getErrorMessage = (err, fallback) => {
-    if (err.response?.data?.detail) {
-      const detail = err.response.data.detail;
-      if (typeof detail === 'string') return detail;
-      if (Array.isArray(detail)) {
-        return detail.map(d => `${d.loc ? d.loc.slice(1).join(' ') : ''} ${d.msg}`.trim()).join(', ');
-      }
+  const handlePresetClick = (p) => {
+    setPreset(p);
+    if (p === 'gmail') {
+      setHost('smtp.gmail.com');
+      setPort(465);
+      setAdvancedOpen(false);
+    } else if (p === 'outlook') {
+      setHost('smtp.office365.com');
+      setPort(587);
+      setAdvancedOpen(false);
+    } else if (p === 'yahoo') {
+      setHost('smtp.mail.yahoo.com');
+      setPort(465);
+      setAdvancedOpen(false);
+    } else {
+      setHost('');
+      setPort(587);
+      setAdvancedOpen(true);
     }
-    return err.response?.data?.detail || fallback || "Something went wrong. Please try again.";
   };
 
   const handleSave = async (e) => {
@@ -69,7 +99,7 @@ export default function Settings() {
     }
 
     if (!username.trim()) {
-      setMessage({ text: 'Gmail Address is required', type: 'error' });
+      setMessage({ text: 'Email Address is required', type: 'error' });
       setSubmitting(false);
       return;
     }
@@ -108,7 +138,7 @@ export default function Settings() {
       resetForm();
       fetchSenders();
     } catch (err) {
-      setMessage({ text: getErrorMessage(err, 'Failed to save settings'), type: 'error' });
+      setMessage({ text: getFriendlyError(err, 'Failed to save settings'), type: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -120,7 +150,7 @@ export default function Settings() {
     setTestResult({ status: 'testing', text: 'Testing...' });
 
     if (!username.trim()) {
-      setMessage({ text: 'Gmail Address is required for connection test', type: 'error' });
+      setMessage({ text: 'Email Address is required for connection test', type: 'error' });
       setTestResult({ status: 'error', text: 'Missing email' });
       setTesting(false);
       return;
@@ -158,7 +188,7 @@ export default function Settings() {
       setMessage({ text: res.data.message, type: 'success' });
       setTestResult({ status: 'success', text: 'Connection Success' });
     } catch (err) {
-      setMessage({ text: getErrorMessage(err, 'SMTP test failed'), type: 'error' });
+      setMessage({ text: getFriendlyError(err, 'SMTP test failed'), type: 'error' });
       setTestResult({ status: 'error', text: 'Connection Failed' });
     } finally {
       setTesting(false);
@@ -174,6 +204,21 @@ export default function Settings() {
     setPort(s.port);
     setSendDelay(s.send_delay_seconds || 3);
     setMessage({ text: '', type: '' });
+
+    // Detect preset based on host/port
+    if (s.host === 'smtp.gmail.com' && s.port === 465) {
+      setPreset('gmail');
+      setAdvancedOpen(false);
+    } else if (s.host === 'smtp.office365.com' && s.port === 587) {
+      setPreset('outlook');
+      setAdvancedOpen(false);
+    } else if (s.host === 'smtp.mail.yahoo.com' && s.port === 465) {
+      setPreset('yahoo');
+      setAdvancedOpen(false);
+    } else {
+      setPreset('custom');
+      setAdvancedOpen(true);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -184,7 +229,7 @@ export default function Settings() {
       if (editingId === id) resetForm();
       fetchSenders();
     } catch (err) {
-      setMessage({ text: getErrorMessage(err, 'Failed to delete'), type: 'error' });
+      setMessage({ text: getFriendlyError(err, 'Failed to delete'), type: 'error' });
     }
   };
 
@@ -197,11 +242,40 @@ export default function Settings() {
     setPort(465);
     setSendDelay(3);
     setTestResult(null);
+    setPreset('gmail');
+    setAdvancedOpen(false);
   };
 
-
+  const getAppPasswordLink = () => {
+    if (preset === 'gmail') {
+      return (
+        <>Navigate to your provider's App Passwords page (e.g. <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }}>Google App Passwords</a>).</>
+      );
+    }
+    if (preset === 'outlook') {
+      return (
+        <>Navigate to your provider's App Passwords page (e.g. <a href="https://account.live.com/proofs/manage/additional" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }}>Microsoft App Passwords</a>).</>
+      );
+    }
+    if (preset === 'yahoo') {
+      return (
+        <>Navigate to your provider's App Passwords page (e.g. <a href="https://login.yahoo.com/account/security" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }}>Yahoo Security Settings</a>).</>
+      );
+    }
+    return <>Navigate to your email provider's account security settings page to generate an App Password.</>;
+  };
 
   if (loading) return <p style={{ color: 'var(--muted-foreground)' }}>Loading settings…</p>;
+
+  const toggleGuide = () => {
+    const newVal = !guideExpanded;
+    setGuideExpanded(newVal);
+    if (!newVal) {
+      localStorage.setItem('guide_collapsed', 'true');
+    } else {
+      localStorage.removeItem('guide_collapsed');
+    }
+  };
 
   return (
     <div style={{ animation: 'slideUp 0.3s var(--ease-smooth)' }}>
@@ -209,7 +283,7 @@ export default function Settings() {
       <div className="page-head">
         <div>
           <h1 className="page-title">SMTP Settings</h1>
-          <p className="page-subtitle">Manage your Gmail sender profiles. Add multiple accounts to scale outreach.</p>
+          <p className="page-subtitle">Manage your sender profiles. Add multiple accounts to scale outreach.</p>
         </div>
       </div>
 
@@ -225,7 +299,7 @@ export default function Settings() {
             <span>You are on the <strong>Trial Plan</strong>. Your trial expires on <strong>{new Date(user.trial_expires_at).toLocaleDateString()}</strong>.</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.82rem', height: '30px' }} onClick={() => alert('Subscription/upgrade features coming soon!')}>Upgrade to Pro</button>
+            <button className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.82rem', height: '30px' }} onClick={() => setShowUpgradeModal(true)}>Upgrade to Pro</button>
             <button
               onClick={() => setShowTrialBanner(false)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '4px', display: 'flex', alignItems: 'center', opacity: 0.7 }}
@@ -254,11 +328,48 @@ export default function Settings() {
       <div className="settings-grid">
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
           {/* ── Add / Edit Form ── */}
           <div className="card" style={{ padding: '24px' }}>
             <h2 className="section-title" style={{ marginBottom: '20px' }}>
               {editingId ? 'Edit Sender' : 'Add Sender'}
             </h2>
+
+            {/* Presets Row */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+              {[
+                { id: 'gmail', name: 'Gmail' },
+                { id: 'outlook', name: 'Outlook' },
+                { id: 'yahoo', name: 'Yahoo' },
+                { id: 'custom', name: 'Custom' }
+              ].map(p => {
+                const active = preset === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handlePresetClick(p.id)}
+                    className={`btn ${active ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{
+                      flex: 1,
+                      fontSize: '0.8rem',
+                      padding: '8px 0',
+                      borderRadius: 'var(--radius)',
+                      border: active ? 'none' : '1px solid var(--border)',
+                      background: active ? 'var(--primary)' : 'var(--bg-secondary)',
+                      color: active ? 'var(--primary-foreground)' : 'var(--foreground)',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      transition: 'all 0.2s',
+                      textAlign: 'center',
+                      display: 'block'
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
 
             <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
               <div className="form-group">
@@ -267,18 +378,30 @@ export default function Settings() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Gmail Address</label>
-                <input type="email" className="form-control" placeholder="you@gmail.com" value={username} onChange={e => setUsername(e.target.value)} required autoComplete="off" />
+                <label className="form-label">Email Address (sender login)</label>
+                <input type="email" className="form-control" placeholder="you@domain.com" value={username} onChange={e => setUsername(e.target.value)} required autoComplete="off" />
               </div>
 
               <div className="form-group">
-                <label className="form-label">Gmail App Password</label>
-                <input type="password" className="form-control" placeholder="16-character app password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="new-password" />
+                <label className="form-label">App Password / SMTP Password</label>
+                <input type="password" className="form-control" placeholder="Enter app password or SMTP password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="new-password" />
                 <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1.4' }}>
-                  Use an App Password — not your account password.
-                  <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, display: 'block', marginTop: '4px' }}>
-                    Generate one here →
-                  </a>
+                  Use a secure App Password rather than your account password.
+                  {preset === 'gmail' && (
+                    <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, display: 'block', marginTop: '4px' }}>
+                      Generate one here →
+                    </a>
+                  )}
+                  {preset === 'outlook' && (
+                    <a href="https://account.live.com/proofs/manage/additional" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, display: 'block', marginTop: '4px' }}>
+                      Generate one here →
+                    </a>
+                  )}
+                  {preset === 'yahoo' && (
+                    <a href="https://login.yahoo.com/account/security" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, display: 'block', marginTop: '4px' }}>
+                      Generate one here →
+                    </a>
+                  )}
                 </span>
               </div>
 
@@ -298,19 +421,41 @@ export default function Settings() {
                 </span>
               </div>
 
+              {/* Advanced toggling link */}
+              {preset !== 'custom' && (
+                <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-start' }}>
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedOpen(!advancedOpen)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--primary)',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      padding: 0,
+                      textDecoration: 'underline'
+                    }}
+                  >
+                    {advancedOpen ? 'Hide advanced settings' : 'Change host/port (advanced)'}
+                  </button>
+                </div>
+              )}
+
               {/* Advanced */}
-              <details style={{ marginBottom: '16px' }}>
-                <summary style={{ cursor: 'pointer', fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, userSelect: 'none' }}>
+              <details open={advancedOpen} onToggle={e => setAdvancedOpen(e.target.open)} style={{ marginBottom: '16px' }}>
+                <summary style={{ cursor: 'pointer', fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, userSelect: 'none', display: preset === 'custom' ? 'list-item' : 'none' }}>
                   Advanced SMTP Settings
                 </summary>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: '12px', marginTop: '12px' }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">SMTP Host</label>
-                    <input type="text" className="form-control" value={host} onChange={e => setHost(e.target.value)} required />
+                    <input type="text" className="form-control" value={host} onChange={e => { setHost(e.target.value); setPreset('custom'); }} required />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">Port</label>
-                    <input type="number" className="form-control" value={port} onChange={e => setPort(parseInt(e.target.value))} required />
+                    <input type="number" className="form-control" value={port} onChange={e => { setPort(parseInt(e.target.value) || ''); setPreset('custom'); }} required />
                   </div>
                 </div>
               </details>
@@ -353,7 +498,110 @@ export default function Settings() {
           </div>
         </div>
 
-        <div className="card" style={{ padding: '24px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Collapsible Setup Guide */}
+          <div className="card" style={{ padding: '16px 20px', background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+            <button
+              type="button"
+              onClick={toggleGuide}
+              style={{
+                width: '100%',
+                background: 'none',
+                border: 'none',
+                textAlign: 'left',
+                padding: 0,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                color: 'var(--foreground)',
+                fontFamily: 'var(--font-header)',
+                fontWeight: 700,
+                fontSize: '0.95rem'
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--primary)' }}>
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                </svg>
+                How to set up your sender account →
+              </span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{
+                  transform: guideExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s'
+                }}
+              >
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+
+            {guideExpanded && (
+              <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px', animation: 'slideDown 0.2s var(--ease-smooth)' }}>
+                <p style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', margin: 0, lineHeight: 1.4 }}>
+                  Follow these steps to generate a secure App Password for your email provider. Regular passwords will fail due to security blocks.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {[
+                    {
+                      step: 1,
+                      title: "Enable 2FA",
+                      desc: <>Enable <strong>Two-Factor Authentication</strong> in your email provider security settings.</>
+                    },
+                    {
+                      step: 2,
+                      title: "App Passwords",
+                      desc: getAppPasswordLink()
+                    },
+                    {
+                      step: 3,
+                      title: "Generate Key",
+                      desc: <>Select App as <strong>"Mail"</strong>, choose your device, and generate a secure 16-character code.</>
+                    },
+                    {
+                      step: 4,
+                      title: "Configure SMTP",
+                      desc: <>Choose your provider preset below, paste your generated key into Password, and test the connection.</>
+                    }
+                  ].map((item) => (
+                    <div key={item.step} style={{ display: 'flex', gap: '10px', background: 'var(--bg-primary)', padding: '10px 12px', borderRadius: 'var(--radius)' }}>
+                      <div style={{
+                        width: '20px',
+                        height: '20px',
+                        borderRadius: '50%',
+                        background: 'var(--primary-subtle)',
+                        color: 'var(--primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        fontSize: '0.75rem',
+                        flexShrink: 0
+                      }}>
+                        {item.step}
+                      </div>
+                      <div>
+                        <strong style={{ display: 'block', fontSize: '0.8rem', marginBottom: '2px', fontFamily: 'var(--font-header)', fontWeight: 700 }}>{item.title}</strong>
+                        <p style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', lineHeight: 1.3, margin: 0 }}>{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="card" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
             <div className="flex-between" style={{ width: '100%' }}>
               <h2 className="section-title" style={{ margin: 0 }}>Configured Senders</h2>
@@ -364,7 +612,7 @@ export default function Settings() {
             {isAtLimit && (
               <div style={{ color: 'var(--error)', fontSize: '0.82rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', alignSelf: 'flex-end' }}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                <span>Limit reached — upgrade to add more senders</span>
+                <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setShowUpgradeModal(true)}>Limit reached — upgrade to add more senders</span>
               </div>
             )}
           </div>
@@ -480,63 +728,12 @@ export default function Settings() {
           )}
         </div>
       </div>
+    </div>
 
-      {/* Gmail Guide */}
-      <div className="card" style={{ marginTop: '24px', padding: '24px' }}>
-        <h2 className="section-title" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--primary)' }}>
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-          </svg>
-          Gmail App Password Setup Guide
-        </h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
-          {[
-            {
-              step: 1,
-              title: "2-Factor Auth",
-              desc: <>Enable <strong>2-Factor Authentication</strong> on your <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }}>Google Account Security settings</a>.</>
-            },
-            {
-              step: 2,
-              title: "App Passwords",
-              desc: <>Go to the <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700, textDecoration: 'underline' }}>Google App Passwords</a> page.</>
-            },
-            {
-              step: 3,
-              title: "Generate Password",
-              desc: <>Select App as <strong>"Mail"</strong>, select Device, and generate the 16-character code.</>
-            },
-            {
-              step: 4,
-              title: "Configure SMTP",
-              desc: <>Use host <code>smtp.gmail.com</code> and port <code>465</code> (SSL/SSL) on the form above.</>
-            }
-          ].map((item) => (
-            <div key={item.step} style={{ display: 'flex', gap: '12px', background: 'var(--bg-secondary)', padding: '16px', borderRadius: 'var(--radius)' }}>
-              <div style={{
-                width: '28px',
-                height: '28px',
-                borderRadius: '50%',
-                background: 'var(--primary)',
-                color: 'var(--primary-foreground)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 800,
-                fontSize: '0.82rem',
-                flexShrink: 0
-              }}>
-                {item.step}
-              </div>
-              <div>
-                <strong style={{ display: 'block', fontSize: '0.88rem', marginBottom: '4px', fontFamily: 'var(--font-header)', fontWeight: 700 }}>{item.title}</strong>
-                <p style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', lineHeight: 1.4 }}>{item.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
     </div>
   );
 }

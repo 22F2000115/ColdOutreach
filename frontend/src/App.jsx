@@ -18,6 +18,7 @@ import Contact from './pages/Contact';
 import OutreachAI from './pages/OutreachAI';
 import History from './pages/History';
 import FAQ from './pages/FAQ';
+import UpgradeModal from './components/UpgradeModal';
 
 // Create API Client instance
 export const api = axios.create({ baseURL: '' });
@@ -618,32 +619,10 @@ function AppLayout({ children }) {
         </main>
       </div>
 
-      {showProModal && (
-        <div className="modal-backdrop" onClick={() => setShowProModal(false)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center', padding: '32px 24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '56px', height: '56px', borderRadius: '50%', background: 'var(--primary-subtle)', color: 'var(--primary)' }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-                  <polyline points="2 17 12 22 22 17"></polyline>
-                  <polyline points="2 12 12 17 22 12"></polyline>
-                </svg>
-              </div>
-            </div>
-            <h3 className="modal-header" style={{ border: 'none', padding: '0 0 8px 0', fontSize: '1.25rem', fontWeight: 800, justifyContent: 'center' }}>
-              Upgrade to Pro to unlock AI Template Generator
-            </h3>
-            <p className="modal-body" style={{ padding: '0 0 24px 0', color: 'var(--text-secondary)', fontSize: '0.92rem', lineHeight: 1.5 }}>
-              Generate highly personalized cold email templates instantly using AI.
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button className="btn btn-primary" onClick={() => setShowProModal(false)} style={{ width: '100%' }}>
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <UpgradeModal
+        isOpen={showProModal}
+        onClose={() => setShowProModal(false)}
+      />
       {showChangePasswordModal && (
         <ChangePasswordModal
           isOpen={showChangePasswordModal}

@@ -192,7 +192,7 @@ async def create_campaign(
         if existing_count >= max_campaigns:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to perform this action."
+                detail=f"Campaign creation limit reached ({max_campaigns} on {current_user.plan} plan). Upgrade to Pro for unlimited campaigns."
             )
 
         # 1. Save Campaign first
@@ -267,6 +267,15 @@ def get_campaign(
         "body_template": campaign.body_template,
         "status": campaign.status,
         "sender_id": campaign.sender_id,
+        "sender": {
+            "id": campaign.sender.id,
+            "host": campaign.sender.host,
+            "port": campaign.sender.port,
+            "username": campaign.sender.username,
+            "from_name": campaign.sender.from_name,
+            "from_email": campaign.sender.from_email,
+            "send_delay_seconds": campaign.sender.send_delay_seconds
+        } if campaign.sender else None,
         "attachment_name": campaign.attachment_name,
         "attachment_display_name": campaign.attachment_display_name,
         "created_at": campaign.created_at,

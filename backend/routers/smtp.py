@@ -82,7 +82,7 @@ def save_smtp(
             if existing_count >= max_accounts:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You do not have permission to perform this action."
+                    detail=f"Sender account limit reached ({max_accounts} on {current_user.plan} plan). Upgrade to Pro for more sender accounts."
                 )
             if not host or not port or not username:
                 raise HTTPException(status_code=400, detail="Host, port, and username are required for new SMTP configuration.")

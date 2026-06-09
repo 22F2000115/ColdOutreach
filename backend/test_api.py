@@ -121,7 +121,7 @@ def run_tests():
         }
     )
     assert smtp2_response.status_code == 403
-    assert smtp2_response.json()["detail"] == "You do not have permission to perform this action."
+    assert smtp2_response.json()["detail"] == "Sender account limit reached (1 on trial plan). Upgrade to Pro for more sender accounts."
     print("SMTP Limit (Trial) OK.")
 
     # 5. Test SMTP Account Limits upgrade (Pro = 3)
@@ -177,7 +177,7 @@ def run_tests():
         }
     )
     assert smtp4_response.status_code == 403
-    assert smtp4_response.json()["detail"] == "You do not have permission to perform this action."
+    assert smtp4_response.json()["detail"] == "Sender account limit reached (3 on pro plan). Upgrade to Pro for more sender accounts."
     print("SMTP Limit (Pro) OK.")
 
     # 6. Test Campaigns and Custom Header Recipient Ingestion
@@ -435,7 +435,7 @@ def run_tests():
         }
     )
     assert create4_res.status_code == 403
-    assert create4_res.json()["detail"] == "You do not have permission to perform this action."
+    assert create4_res.json()["detail"] == "Campaign creation limit reached (3 on trial plan). Upgrade to Pro for unlimited campaigns."
     print("Campaign limits (Trial) OK.")
 
     # 11. Test Account Suspension (is_active = False)

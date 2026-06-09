@@ -127,12 +127,16 @@ ColdOutreach/
 │   │   │   ├── OutreachAI.jsx         -- AI template generator and library
 │   │   │   ├── History.jsx            -- Activity log timeline and CSV export
 │   │   │   ├── Contact.jsx            -- Support and plan upgrade page
+│   │   │   ├── FAQ.jsx                -- Searchable FAQ & Help Center page
 │   │   │   └── AdminDashboard.jsx     -- Admin control panel with server-side pagination
 │   │   ├── components/
 │   │   │   ├── RichEditor.jsx         -- WYSIWYG template editor
 │   │   │   ├── FailedContactsTab.jsx  -- Failed delivery retry log
 │   │   │   ├── TrialExpiredModal.jsx  -- Plan restriction overlay
+│   │   │   ├── UpgradeModal.jsx       -- Subscription manual upgrade request modal
 │   │   │   └── ChangePasswordModal.jsx -- Overlay modal for updating user passwords
+│   │   ├── utils/
+│   │   │   └── errors.js              -- Centralized API error parsing utility
 │   │   ├── App.jsx          -- Router configuration and sidebar layout
 │   │   ├── main.jsx         -- React render entry point
 │   │   └── index.css        -- Global design tokens and component styles

@@ -31,25 +31,25 @@ def check_quota(user: User, action: str, db: Session):
         if user.campaign_add_count >= quota.add_limit:
             raise HTTPException(
                 status_code=403,
-                detail="You do not have permission to perform this action."
+                detail=f"Campaign creation limit reached ({quota.add_limit} on {user.plan} plan). Upgrade to Pro for unlimited campaigns."
             )
     elif action == "edit":
         if user.campaign_edit_count >= quota.edit_limit:
             raise HTTPException(
                 status_code=403,
-                detail="You do not have permission to perform this action."
+                detail=f"Campaign edit limit reached ({quota.edit_limit} on {user.plan} plan). Upgrade to Pro for unlimited edits."
             )
     elif action == "delete":
         if user.campaign_delete_count >= quota.delete_limit:
             raise HTTPException(
                 status_code=403,
-                detail="You do not have permission to perform this action."
+                detail=f"Campaign delete limit reached ({quota.delete_limit} on {user.plan} plan). Upgrade to Pro for unlimited deletes."
             )
     elif action == "save":
         if user.campaign_save_count >= quota.save_limit:
             raise HTTPException(
                 status_code=403,
-                detail="You do not have permission to perform this action."
+                detail=f"Campaign template save limit reached ({quota.save_limit} on {user.plan} plan). Upgrade to Pro for unlimited template saves."
             )
 
 

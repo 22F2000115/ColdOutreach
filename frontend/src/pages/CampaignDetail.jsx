@@ -8,6 +8,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api, useAuth } from '../App';
 import RichEditor from '../components/RichEditor';
 import FailedContactsTab from '../components/FailedContactsTab';
+import { getFriendlyError } from '../utils/errors';
+import UpgradeModal from '../components/UpgradeModal';
 
 function StatusBadge({ status }) {
   const map = {
@@ -41,6 +43,10 @@ export default function CampaignDetail() {
   const [message, setMessage] = useState({ text: '', type: '' });
   const [activeTab, setActiveTab] = useState('all');
   const [submittingSync, setSubmittingSync] = useState(false);
+
+  // New UI states
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
 
   // Outer section tabs & action states
   const [activeSection, setActiveSection] = useState('setup');
@@ -80,7 +86,7 @@ export default function CampaignDetail() {
 
   useEffect(() => {
     if (!campaign || campaign.status !== 'running') return;
-    const t = setInterval(() => fetchData(true), 3000);
+    const t = setInterval(() => fetchData(true), 4000);
     return () => clearInterval(t);
   }, [campaign?.status]);
 
@@ -137,18 +143,6 @@ export default function CampaignDetail() {
     }
   };
 
-  const getErrorMessage = (err, fallback) => {
-    if (err.response?.data?.detail) {
-      const detail = err.response.data.detail;
-      if (typeof detail === 'string') return detail;
-      if (Array.isArray(detail)) {
-        return detail.map(d => `${d.loc ? d.loc.slice(1).join(' ') : ''} ${d.msg}`.trim()).join(', ');
-      }
-      return JSON.stringify(detail);
-    }
-    return err.response?.data?.detail || "Something went wrong. Please try again.";
-  };
-
   const fetchData = async (isPolling = false) => {
     try {
       const [campRes, recRes] = await Promise.all([
@@ -158,8 +152,9 @@ export default function CampaignDetail() {
       setCampaign(campRes.data);
       setRecipients(recRes.data);
       await refreshUser();
+      return campRes.data;
     } catch (err) {
-      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
+      setMessage({ text: getFriendlyError(err, "Something went wrong. Please try again."), type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -176,7 +171,7 @@ export default function CampaignDetail() {
       fetchData();
       setMessage({ text: `Campaign status updated to ${res.data.status}`, type: 'success' });
     } catch (err) {
-      setMessage({ text: getErrorMessage(err, `Failed to execute action: ${action}`), type: 'error' });
+      setMessage({ text: getFriendlyError(err, `Failed to execute action: ${action}`), type: 'error' });
     } finally {
       setSubmittingAction(false);
     }
@@ -185,7 +180,7 @@ export default function CampaignDetail() {
   const handleSaveTemplate = async (e) => {
     e.preventDefault();
     if (isSaveQuotaReached) {
-      alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
+      setShowUpgradeModal(true);
       return;
     }
     if (!campName.trim() || !subject.trim()) {
@@ -207,7 +202,7 @@ export default function CampaignDetail() {
       setMessage({ text: 'Template saved successfully', type: 'success' });
       fetchData();
     } catch (err) {
-      setMessage({ text: getErrorMessage(err, 'Failed to save template'), type: 'error' });
+      setMessage({ text: getFriendlyError(err, 'Failed to save template'), type: 'error' });
     } finally {
       setSubmittingTemplate(false);
     }
@@ -231,7 +226,7 @@ export default function CampaignDetail() {
       setMessage({ text: 'Recipient added successfully', type: 'success' });
       fetchData();
     } catch (err) {
-      setMessage({ text: getErrorMessage(err, 'Failed to add recipient'), type: 'error' });
+      setMessage({ text: getFriendlyError(err, 'Failed to add recipient'), type: 'error' });
     } finally {
       setSubmittingContact(false);
     }
@@ -256,7 +251,7 @@ export default function CampaignDetail() {
       setMessage({ text: res.data.message || 'CSV file processed successfully', type: 'success' });
       fetchData();
     } catch (err) {
-      setMessage({ text: getErrorMessage(err, 'Failed to upload CSV file'), type: 'error' });
+      setMessage({ text: getFriendlyError(err, 'Failed to upload CSV file'), type: 'error' });
     } finally {
       setSubmittingCsv(false);
     }
@@ -265,6 +260,7 @@ export default function CampaignDetail() {
   const handleSyncBounces = async () => {
     setMessage({ text: '', type: '' });
     setSubmittingSync(true);
+    const oldFailed = campaign?.stats?.failed || 0;
     try {
       const res = await api.post(`/api/campaigns/${id}/sync-bounces`);
       setMessage({
@@ -272,15 +268,28 @@ export default function CampaignDetail() {
         type: 'info'
       });
       // Delay fetching data to give the background sync worker time to run
-      setTimeout(() => {
-        fetchData();
+      setTimeout(async () => {
+        const updatedCampaign = await fetchData(true);
+        const newFailed = updatedCampaign?.stats?.failed || 0;
+        const diff = newFailed - oldFailed;
+        if (diff > 0) {
+          setMessage({
+            text: `Bounce check complete! Detected ${diff} new delivery failure(s).`,
+            type: 'success'
+          });
+        } else {
+          setMessage({
+            text: 'Bounce check complete! No new delivery failures detected.',
+            type: 'success'
+          });
+        }
+        setSubmittingSync(false);
       }, 5000);
     } catch (err) {
       setMessage({
-        text: err.response?.data?.detail || "Something went wrong. Please try again.",
+        text: getFriendlyError(err, 'Failed to start bounce sync.'),
         type: 'error'
       });
-    } finally {
       setSubmittingSync(false);
     }
   };
@@ -297,7 +306,7 @@ export default function CampaignDetail() {
       link.click();
       link.remove();
     } catch (err) {
-      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
+      setMessage({ text: getFriendlyError(err, "Something went wrong. Please try again."), type: 'error' });
     }
   };
 
@@ -313,7 +322,7 @@ export default function CampaignDetail() {
       link.click();
       link.remove();
     } catch (err) {
-      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
+      setMessage({ text: getFriendlyError(err, "Something went wrong. Please try again."), type: 'error' });
     }
   };
 
@@ -325,7 +334,7 @@ export default function CampaignDetail() {
       setMessage({ text: 'Recipient removed.', type: 'success' });
       fetchData();
     } catch (err) {
-      setMessage({ text: getErrorMessage(err, 'Failed to remove recipient'), type: 'error' });
+      setMessage({ text: getFriendlyError(err, 'Failed to remove recipient'), type: 'error' });
     }
   };
 
@@ -361,7 +370,19 @@ export default function CampaignDetail() {
   if (loading) return <p style={{ color: 'var(--muted-foreground)' }}>Loading campaign...</p>;
   if (message.type === 'error' && !campaign) return <div className="alert alert-error">{message.text}</div>;
 
-  const pct = campaign.stats.total > 0 ? Math.round((campaign.stats.sent / campaign.stats.total) * 100) : 0;
+  const processedCount = (campaign?.stats?.sent || 0) + (campaign?.stats?.failed || 0);
+  const remainingCount = (campaign?.stats?.total || 0) - processedCount;
+  const sendDelaySec = campaign?.sender?.send_delay_seconds || 3;
+  const etaSeconds = remainingCount * sendDelaySec;
+
+  const formatETA = (seconds) => {
+    if (seconds <= 0) return '0s';
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+  };
+
+  const pct = campaign.stats.total > 0 ? Math.round((processedCount / campaign.stats.total) * 100) : 0;
 
   // Pagination calculations for All Contacts
   const startIndex = (currentPage - 1) * pageSize;
@@ -387,7 +408,7 @@ export default function CampaignDetail() {
           <div style={{ display: 'flex', gap: '8px' }}>
             {user?.plan !== 'pro' && (
               <button
-                onClick={() => navigate('/contact')}
+                onClick={() => setShowUpgradeModal(true)}
                 className="btn btn-primary"
                 style={{ padding: '6px 12px', fontSize: '0.8rem', height: '30px' }}
               >
@@ -550,16 +571,27 @@ export default function CampaignDetail() {
         <div className="metric-card campaign-stat-card accent-indigo" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '115px' }}>
           <div>
             <div className="eyebrow" style={{ marginBottom: '6px' }}>Campaign Status</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
               <StatusBadge status={campaign.status} />
+              {campaign.status === 'running' && (
+                <span style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <span className="pulse-indicator" style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--primary)', display: 'inline-block', animation: 'pulsing 1.5s infinite' }} />
+                  Active
+                </span>
+              )}
             </div>
+            {campaign.status === 'running' && (
+              <div style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', marginTop: '4px' }}>
+                ETA: ~{formatETA(etaSeconds)} remaining
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '14px' }}>
             <div className="progress-bar-track" style={{ height: '4px', flexGrow: 1, margin: 0 }}>
               <div className={`progress-bar-fill${campaign.status === 'running' ? ' shimmer' : ''}`} style={{ width: `${pct}%` }} />
             </div>
             <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)', fontWeight: 700, flexShrink: 0 }}>
-              {pct}% ({campaign.stats.sent}/{campaign.stats.total})
+              {pct}% ({processedCount}/{campaign.stats.total})
             </span>
           </div>
         </div>
@@ -896,18 +928,54 @@ export default function CampaignDetail() {
               </button>
             </div>
 
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ fontSize: '0.8rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: '4px 0' }}
-              onClick={handleSyncBounces}
-              disabled={submittingSync}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: submittingSync ? 'spin 1.5s linear infinite' : 'none' }}>
-                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
-              </svg>
-              {submittingSync ? 'Syncing...' : 'Sync Bounces'}
-            </button>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ fontSize: '0.8rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: '4px 0' }}
+                onClick={handleSyncBounces}
+                disabled={submittingSync}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: submittingSync ? 'spin 1.5s linear infinite' : 'none' }}>
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+                </svg>
+                {submittingSync ? 'Checking...' : 'Check for Delivery Failures'}
+              </button>
+              <div
+                className="tooltip-container"
+                style={{ position: 'relative', display: 'inline-block', cursor: 'pointer', height: '16px' }}
+                onMouseEnter={() => setShowTooltip(true)}
+                onMouseLeave={() => setShowTooltip(false)}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--muted-foreground)' }}>
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                {showTooltip && (
+                  <span className="tooltip-text" style={{
+                    width: '240px',
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--foreground)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    position: 'absolute',
+                    zIndex: 100,
+                    bottom: '125%',
+                    left: '50%',
+                    marginLeft: '-120px',
+                    border: '1px solid var(--border)',
+                    boxShadow: 'var(--shadow-md)',
+                    fontSize: '0.74rem',
+                    lineHeight: '1.3',
+                    pointerEvents: 'none',
+                    textAlign: 'center'
+                  }}>
+                    Checks your sender inbox for bounced/returned email notifications and marks those contacts as failed.
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
           {activeTab === 'all' ? (
@@ -943,8 +1011,16 @@ export default function CampaignDetail() {
                         </td>
                       </tr>
                     ) : paginatedRecipients.map((r) => (
-                      <tr key={r.id} className={`outreach-log-row status-${r.status}`}>
-                        <td style={{ fontWeight: 600 }}>{r.email}</td>
+                      <tr key={r.id} className={`outreach-log-row status-${r.status}`} style={r.status === 'failed' ? { background: 'rgba(244, 63, 94, 0.04)' } : {}}>
+                        <td style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {r.status === 'failed' && (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--error)', flexShrink: 0 }}>
+                              <polyline points="9 17 4 12 9 7"></polyline>
+                              <path d="M20 18v-2a4 4 0 0 0-4-4H4"></path>
+                            </svg>
+                          )}
+                          <span style={r.status === 'failed' ? { color: 'var(--error)' } : {}}>{r.email}</span>
+                        </td>
                         <td style={{ color: 'var(--muted-foreground)' }}>{r.company || '—'}</td>
                         <td><StatusBadge status={r.status} /></td>
                         <td style={{ color: 'var(--muted-foreground)', fontSize: '0.82rem' }}>
@@ -1120,7 +1196,7 @@ export default function CampaignDetail() {
                       await refreshUser();
                       navigate('/');
                     } catch (err) {
-                      setMessage({ text: err.response?.data?.detail || "Something went wrong. Please try again.", type: 'error' });
+                      setMessage({ text: getFriendlyError(err, "Something went wrong. Please try again."), type: 'error' });
                     }
                   })();
                 }}>
@@ -1131,6 +1207,11 @@ export default function CampaignDetail() {
           </div>
         </div>
       )}
+
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
     </div>
   );
 }

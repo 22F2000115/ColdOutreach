@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, useAuth } from '../App';
 import { PLAN_LIMITS } from '../config';
 import RichEditor from '../components/RichEditor';
+import { getFriendlyError } from '../utils/errors';
+import UpgradeModal from '../components/UpgradeModal';
 
 /* ── Status badge helper ──────────────────────────────────────────────────── */
 function StatusBadge({ status }) {
@@ -49,6 +51,14 @@ export default function Dashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  // New UI states
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() => {
+    return localStorage.getItem('onboarding_dismissed') === 'true';
+  });
+  const [csvFields, setCsvFields] = useState(null);
+  const [csvHeaders, setCsvHeaders] = useState([]);
+
   // Derived values/variables
   const userPlan = user?.plan || 'trial';
   const campaignLimit = user?.limits?.max_campaigns ?? PLAN_LIMITS[userPlan].max_campaigns;
@@ -85,11 +95,11 @@ export default function Dashboard() {
   // Handler and helper functions
   const handleOpenCreateModal = () => {
     if (isAddQuotaReached) {
-      alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
+      setShowUpgradeModal(true);
       return;
     }
     if (isAtCampaignLimit) {
-      alert(`Campaign limit reached (${campaignLimit} allowed on ${userPlan} plan). Please upgrade to add more.`);
+      setShowUpgradeModal(true);
       return;
     }
     setShowModal(true);
@@ -113,11 +123,63 @@ export default function Dashboard() {
     }
   };
 
+  const handleCsvChange = (e) => {
+    const file = e.target.files[0];
+    setCsvFile(file);
+    if (!file) {
+      setCsvFields(null);
+      setCsvHeaders([]);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target.result;
+        const lines = text.split(/\r?\n/).filter(line => line.trim());
+        if (lines.length > 0) {
+          const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, ''));
+          setCsvHeaders(headers);
+          if (lines.length > 1) {
+            const values = lines[1].split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
+            const sampleLead = {};
+            headers.forEach((h, idx) => {
+              sampleLead[h] = values[idx] || '';
+            });
+            setCsvFields(sampleLead);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to parse sample CSV lead", err);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleDownloadSampleCSV = () => {
+    const csvContent = "email,first_name,last_name,company,role\nlead1@example.com,John,Doe,Acme Corp,CEO\nlead2@example.com,Jane,Smith,Beta LLC,VP of Growth\n";
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "sample_contacts.csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getSampleData = () => {
+    const defaultSample = { company: "Acme Corp", first_name: "Jane", last_name: "Doe", role: "VP of Growth" };
+    return { ...defaultSample, ...csvFields };
+  };
+
   const resetModal = () => {
     setName(''); setSubject('');
-    setBody('<p>Hi,</p><p>I noticed what your company <strong>{company}</strong> is doing and wanted to reach out.</p>');
+    setBody('<p>Hi,</p><p>I noticed what your company <strong>{{company}}</strong> is doing and wanted to reach out.</p>');
     setCsvFile(null); setAttachmentFile(null); setAttachmentDisplayName('');
     setError('');
+    setCsvFields(null);
+    setCsvHeaders([]);
   };
 
   const handleCreate = async (e) => {
@@ -145,7 +207,7 @@ export default function Dashboard() {
       // Redirect to the new campaign so user can add contacts there
       navigate(`/campaigns/${res.data.campaign_id}`);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Something went wrong. Please try again.');
+      setError(getFriendlyError(err, 'Something went wrong. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -154,7 +216,7 @@ export default function Dashboard() {
   const handleDelete = async (id, e) => {
     e.preventDefault();
     if (isDeleteQuotaReached) {
-      alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
+      setShowUpgradeModal(true);
       return;
     }
     if (!confirm('Delete this campaign?')) return;
@@ -162,8 +224,8 @@ export default function Dashboard() {
       await api.delete(`/api/campaigns/${id}`);
       await refreshUser();
       fetchCampaigns();
-    } catch {
-      alert('Something went wrong. Please try again.');
+    } catch (err) {
+      alert(getFriendlyError(err, 'Something went wrong. Please try again.'));
     }
   };
 
@@ -175,7 +237,11 @@ export default function Dashboard() {
       await api.post(`/api/campaigns/${id}/action`, fd);
       fetchCampaigns();
     } catch (err) {
-      alert(err.response?.data?.detail || 'Something went wrong. Please try again.');
+      if (err.response?.status === 403) {
+        setShowUpgradeModal(true);
+      } else {
+        alert(getFriendlyError(err, 'Something went wrong. Please try again.'));
+      }
     }
   };
 
@@ -185,7 +251,14 @@ export default function Dashboard() {
       {/* Page Header */}
       <div className="page-head">
         <div>
-          <h1 className="page-title">Campaigns</h1>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            Campaigns
+            {userPlan === 'trial' && (
+              <span style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', fontWeight: 500, padding: '2px 8px', borderRadius: '12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                Campaigns: {campaigns.length} / {campaignLimit} used
+              </span>
+            )}
+          </h1>
           <p className="page-subtitle">Manage and monitor your outreach campaigns.</p>
         </div>
         <button
@@ -210,6 +283,73 @@ export default function Dashboard() {
         </button>
       </div>
 
+      {/* Onboarding checklist guide */}
+      {!onboardingDismissed && campaigns.length === 0 && senders.length === 0 && (
+        <div className="card" style={{ padding: '20px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', marginBottom: '24px', position: 'relative' }}>
+          <button
+            onClick={() => {
+              localStorage.setItem('onboarding_dismissed', 'true');
+              setOnboardingDismissed(true);
+            }}
+            style={{
+              position: 'absolute',
+              top: '16px',
+              right: '16px',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--muted-foreground)',
+              opacity: 0.7
+            }}
+            title="Dismiss guide"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+          <h3 style={{ margin: '0 0 8px 0', fontFamily: 'var(--font-header)', fontWeight: 700, fontSize: '1.05rem', color: 'var(--foreground)' }}>Quick Start Guide</h3>
+          <p style={{ margin: '0 0 16px 0', fontSize: '0.82rem', color: 'var(--muted-foreground)', lineHeight: 1.4 }}>
+            Welcome to ColdOutreach. Follow these quick steps to launch your first email outreach campaign:
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            <div style={{ display: 'flex', gap: '10px', background: 'var(--bg-primary)', padding: '12px', borderRadius: 'var(--radius)' }}>
+              <div style={{
+                width: '24px', height: '24px', borderRadius: '50%',
+                background: senders.length > 0 ? 'var(--success-subtle)' : 'var(--primary-subtle)',
+                color: senders.length > 0 ? 'var(--success)' : 'var(--primary)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.75rem', flexShrink: 0
+              }}>
+                {senders.length > 0 ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                ) : "1"}
+              </div>
+              <div>
+                <strong style={{ display: 'block', fontSize: '0.8rem', fontFamily: 'var(--font-header)', fontWeight: 700, marginBottom: '2px' }}>Configure Sender Profile</strong>
+                <p style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', margin: 0, lineHeight: 1.3 }}>
+                  Go to <Link to="/settings" style={{ color: 'var(--primary)', fontWeight: 600 }}>SMTP Settings</Link> to connect your first outbound email profile.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', background: 'var(--bg-primary)', padding: '12px', borderRadius: 'var(--radius)' }}>
+              <div style={{
+                width: '24px', height: '24px', borderRadius: '50%',
+                background: campaigns.length > 0 ? 'var(--success-subtle)' : 'var(--primary-subtle)',
+                color: campaigns.length > 0 ? 'var(--success)' : 'var(--primary)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.75rem', flexShrink: 0
+              }}>
+                {campaigns.length > 0 ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                ) : "2"}
+              </div>
+              <div>
+                <strong style={{ display: 'block', fontSize: '0.8rem', fontFamily: 'var(--font-header)', fontWeight: 700, marginBottom: '2px' }}>Create First Campaign</strong>
+                <p style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', margin: 0, lineHeight: 1.3 }}>
+                  Click <strong>"New Campaign"</strong>, fill in details, upload CSV, and customize templates.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Quota Limit Warning Banner */}
       {(isAddQuotaReached || isEditQuotaReached || isDeleteQuotaReached) && (
         <div className="alert alert-error" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
@@ -222,7 +362,7 @@ export default function Dashboard() {
           <div style={{ display: 'flex', gap: '8px' }}>
             {user?.plan !== 'pro' && (
               <button
-                onClick={() => navigate('/contact')}
+                onClick={() => setShowUpgradeModal(true)}
                 className="btn btn-primary"
                 style={{ padding: '6px 12px', fontSize: '0.8rem', height: '30px' }}
               >
@@ -363,9 +503,9 @@ export default function Dashboard() {
                 <div style={{ flex: '1.2', minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                   {isEditQuotaReached ? (
                     <span
-                      style={{ fontFamily: 'var(--font-header)', fontWeight: 800, fontSize: '1.22rem', color: 'var(--muted-foreground)', display: 'block', marginBottom: '6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', cursor: 'not-allowed' }}
-                      title="Edit quota reached"
-                      onClick={() => alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.")}
+                      style={{ fontFamily: 'var(--font-header)', fontWeight: 800, fontSize: '1.22rem', color: 'var(--muted-foreground)', display: 'block', marginBottom: '6px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', cursor: 'pointer', textDecoration: 'underline' }}
+                      title="Edit quota reached — click to upgrade"
+                      onClick={() => setShowUpgradeModal(true)}
                     >
                       {c.name}
                     </span>
@@ -452,11 +592,11 @@ export default function Dashboard() {
                   {isEditQuotaReached ? (
                     <button
                       className="btn btn-secondary"
-                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: 0.6, cursor: 'not-allowed' }}
+                      style={{ padding: '9px 14px', fontSize: '0.88rem', height: '38px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer' }}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        alert("You've reached your plan limit. Please upgrade to Pro or contact us for help.");
+                        setShowUpgradeModal(true);
                       }}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -523,6 +663,12 @@ export default function Dashboard() {
             </div>
 
             <div className="modal-body">
+              {senders.length === 0 && (
+                <div className="alert alert-error" style={{ marginBottom: '16px' }}>
+                  No sender accounts configured. Please add an SMTP sender account under SMTP Settings before creating a campaign.
+                </div>
+              )}
+
               {error && (
                 <div className="alert alert-error">! {error}</div>
               )}
@@ -556,10 +702,45 @@ export default function Dashboard() {
                 <div className="form-group">
                   <label className="form-label">Email Body</label>
                   <RichEditor value={body} onChange={setBody} />
-                  <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', marginTop: '4px', display: 'block' }}>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', marginTop: '4px', display: 'block', marginBottom: '8px' }}>
                     Use placeholders like <code>{"{{company}}"}</code>, <code>{"{{first_name}}"}</code>, etc. anywhere in the body.
                   </span>
                 </div>
+
+                {/* Personalization Variables Guide */}
+                <details style={{ marginBottom: '16px', background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                  <summary style={{ cursor: 'pointer', fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, userSelect: 'none' }}>
+                    Personalization Variables Guide
+                  </summary>
+                  <div style={{ marginTop: '10px', fontSize: '0.78rem', color: 'var(--muted-foreground)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <p style={{ margin: 0, lineHeight: 1.4 }}>
+                      Inject dynamic properties for each lead by wrapping the column name in double curly braces: <code>{"{{variable_name}}"}</code>.
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', background: 'var(--bg-primary)', padding: '8px', borderRadius: '6px' }}>
+                      <div>
+                        <strong>Common Variables:</strong>
+                        <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                          <li><code>{"{{first_name}}"}</code></li>
+                          <li><code>{"{{last_name}}"}</code></li>
+                          <li><code>{"{{company}}"}</code></li>
+                          <li><code>{"{{role}}"}</code></li>
+                        </ul>
+                      </div>
+                      <div>
+                        <strong>Your CSV Columns:</strong>
+                        {csvHeaders.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                            {csvHeaders.map(h => (
+                              <code key={h} style={{ fontSize: '0.7rem', background: 'var(--primary-subtle)', color: 'var(--primary)', padding: '2px 4px', borderRadius: '4px' }}>{"{{"}{h}{"}}"}</code>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Upload a CSV to view custom variables.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </details>
 
                 <div className="form-group" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-8px', marginBottom: '16px' }}>
                   <button
@@ -578,8 +759,26 @@ export default function Dashboard() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                   <div className="form-group">
-                    <label className="form-label">Contacts CSV <span style={{ fontWeight: 400, color: 'var(--muted-foreground)', fontSize: '0.75rem' }}>(optional)</span></label>
-                    <input type="file" accept=".csv" className="form-control" onChange={e => setCsvFile(e.target.files[0])} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label className="form-label" style={{ margin: 0 }}>Contacts CSV <span style={{ fontWeight: 400, color: 'var(--muted-foreground)', fontSize: '0.75rem' }}>(optional)</span></label>
+                      <button
+                        type="button"
+                        onClick={handleDownloadSampleCSV}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--primary)',
+                          fontSize: '0.74rem',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          padding: 0,
+                          textDecoration: 'underline'
+                        }}
+                      >
+                        Download sample CSV
+                      </button>
+                    </div>
+                    <input type="file" accept=".csv" className="form-control" onChange={handleCsvChange} />
                     <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)' }}>Needs an <code>email</code> column. You can also add leads after creation.</span>
                   </div>
                   <div className="form-group">
@@ -602,7 +801,7 @@ export default function Dashboard() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-                  <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={submitting}>
+                  <button type="submit" className="btn btn-primary" style={{ flexGrow: 1 }} disabled={submitting || senders.length === 0}>
                     {submitting ? 'Creating…' : 'Create Campaign →'}
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={() => { resetModal(); setShowModal(false); }}>
@@ -636,7 +835,7 @@ export default function Dashboard() {
                 </div>
                 <div style={{ fontSize: '0.94rem', color: 'var(--foreground)', borderTop: '1px solid var(--border-subtle)', paddingTop: '8px', marginTop: '4px' }}>
                   <strong>Subject:</strong> {(() => {
-                    const sample = { company: "Acme Corp", first_name: "Jane", last_name: "Doe", role: "VP of Growth" };
+                    const sample = getSampleData();
                     let sub = subject;
                     Object.keys(sample).forEach(k => {
                       sub = sub.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'gi'), sample[k]);
@@ -648,7 +847,7 @@ export default function Dashboard() {
               </div>
 
               <div>
-                <label className="form-label" style={{ marginBottom: '8px' }}>Rendered Body (Sandboxed Preview)</label>
+                <label className="form-label" style={{ margin: '0 0 8px 0', display: 'block' }}>Rendered Body (Sandboxed Preview)</label>
                 <iframe
                   srcDoc={`
                     <html>
@@ -669,7 +868,7 @@ export default function Dashboard() {
                       </head>
                       <body>
                         ${(() => {
-                          const sample = { company: "Acme Corp", first_name: "Jane", last_name: "Doe", role: "VP of Growth" };
+                          const sample = getSampleData();
                           let rendered = body;
                           Object.keys(sample).forEach(k => {
                             rendered = rendered.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'gi'), sample[k]);
@@ -704,6 +903,11 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
     </div>
   );
 }
