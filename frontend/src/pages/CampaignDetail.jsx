@@ -11,6 +11,31 @@ import FailedContactsTab from '../components/FailedContactsTab';
 import { getFriendlyError } from '../utils/errors';
 import UpgradeModal from '../components/UpgradeModal';
 
+function getFriendlyErrorMessage(errorMsg) {
+  if (!errorMsg) return '—';
+  const lower = errorMsg.toLowerCase();
+  
+  if (lower.includes('nxdomain') || lower.includes('domain not found') || lower.includes('dns type')) {
+    return "Email domain doesn't exist (spelling error or invalid company website).";
+  }
+  if (lower.includes('user unknown') || lower.includes('550') || lower.includes('551') || lower.includes('no such user') || lower.includes('recipient rejected') || lower.includes('mailbox unavailable')) {
+    return "This email address doesn't exist.";
+  }
+  if (lower.includes('timeout') || lower.includes('connection timed out')) {
+    return "The recipient's mail server didn't respond in time.";
+  }
+  if (lower.includes('connection refused') || lower.includes('connect refused')) {
+    return "The recipient's mail server rejected the connection.";
+  }
+  if (lower.includes('auth') || lower.includes('credential') || lower.includes('login') || lower.includes('rejection')) {
+    return "Sender account authentication failure. Please check your SMTP settings.";
+  }
+  if (lower.includes('spam') || lower.includes('blocked') || lower.includes('blacklisted') || lower.includes('reputation')) {
+    return "Email blocked by recipient server's spam filter.";
+  }
+  return errorMsg; // Fallback to raw error if it doesn't match common patterns
+}
+
 function StatusBadge({ status }) {
   const map = {
     running:   'badge-running',
@@ -25,7 +50,7 @@ function StatusBadge({ status }) {
   return (
     <span className={`badge ${map[status] || 'badge-draft'}`}>
       {status === 'running' && <span className="sending-dot" />}
-      {status}
+      {status === 'sent' ? 'delivered' : status}
     </span>
   );
 }
@@ -264,7 +289,7 @@ export default function CampaignDetail() {
     try {
       const res = await api.post(`/api/campaigns/${id}/sync-bounces`);
       setMessage({
-        text: res.data.message || 'Bounce sync started in the background. Check back in a moment.',
+        text: res.data.message || 'Checking your sender mailbox for delivery failures in the background...',
         type: 'info'
       });
       // Delay fetching data to give the background sync worker time to run
@@ -274,12 +299,12 @@ export default function CampaignDetail() {
         const diff = newFailed - oldFailed;
         if (diff > 0) {
           setMessage({
-            text: `Bounce check complete! Detected ${diff} new delivery failure(s).`,
+            text: `Delivery failure check complete! Found ${diff} new failed email(s).`,
             type: 'success'
           });
         } else {
           setMessage({
-            text: 'Bounce check complete! No new delivery failures detected.',
+            text: 'Check complete! No new delivery failures found.',
             type: 'success'
           });
         }
@@ -287,7 +312,7 @@ export default function CampaignDetail() {
       }, 5000);
     } catch (err) {
       setMessage({
-        text: getFriendlyError(err, 'Failed to start bounce sync.'),
+        text: getFriendlyError(err, 'Failed to check for delivery failures.'),
         type: 'error'
       });
       setSubmittingSync(false);
@@ -501,7 +526,7 @@ export default function CampaignDetail() {
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                       <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
                     </svg>
-                    Reset Status
+                    Retry Campaign
                   </button>
                 )}
                 <button
@@ -629,7 +654,7 @@ export default function CampaignDetail() {
         {/* Card 4: Failed */}
         <div className="metric-card campaign-stat-card accent-red" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div className="metric-label">Bounced</div>
+            <div className="metric-label">Failed to Deliver</div>
             <div className="metric-value">{campaign.stats.failed}</div>
           </div>
           <div style={{ color: 'var(--stat-failures)', opacity: 0.8 }}>
@@ -734,16 +759,13 @@ export default function CampaignDetail() {
                   disabled={!isEditable || submittingTemplate}
                 />
                 <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', marginTop: '6px', lineHeight: '1.45' }}>
-                  <strong>Supported Placeholders:</strong> <code>{"{{first_name}}"}</code>, <code>{"{{last_name}}"}</code>, <code>{"{{company}}"}</code>, <code>{"{{role}}"}</code>.
-                  <br />
-                  You can also use custom headers from your CSV (e.g. <code>{"{{website}}"}</code>). Both <code>{"{{double}}"}</code> and <code>{"{single}"}</code> braces work.
+                  <strong>Personalize your email using contact details</strong> like <code>{"{{first_name}}"}</code>, <code>{"{{company}}"}</code>, or <code>{"{{role}}"}</code>. The app will automatically swap these with each contact's real data when sending. (You can also use any column header name from your spreadsheet).
                 </span>
                 {unrecognizedPlaceholders.length > 0 && (
                   <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', borderRadius: '6px', fontSize: '0.78rem', color: '#b45309', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontWeight: 700 }}>⚠️ Unrecognized Placeholders:</span>
+                    <span style={{ fontWeight: 700 }}>Unmatched personalization fields:</span>
                     <span>
-                      The template uses <strong>{unrecognizedPlaceholders.map(u => `{{${u}}}`).join(', ')}</strong> which might not match your lead details.
-                      Make sure these match your CSV headers exactly, or use standard fields: {availableKeys.map(k => `{{${k}}}`).join(', ')}.
+                      Your email template uses <strong>{unrecognizedPlaceholders.map(u => `{{${u}}}`).join(', ')}</strong>, which doesn't match any columns in your contacts list. Please check your spelling or verify your spreadsheet columns match these exactly.
                     </span>
                   </div>
                 )}
@@ -836,14 +858,14 @@ export default function CampaignDetail() {
                     </div>
                   ) : (
                     <div>
-                      <div style={{ fontWeight: 700, color: 'var(--foreground)', fontSize: '0.9rem' }}>Drag & drop your CSV here</div>
-                      <div style={{ color: 'var(--muted-foreground)', fontSize: '0.78rem', marginTop: '2px' }}>or click to browse from device</div>
+                      <div style={{ fontWeight: 700, color: 'var(--foreground)', fontSize: '0.9rem' }}>Drag & drop your contacts spreadsheet here</div>
+                      <div style={{ color: 'var(--muted-foreground)', fontSize: '0.78rem', marginTop: '2px' }}>or click to browse (.csv format)</div>
                     </div>
                   )}
                 </div>
 
                 <div>
-                  <label className="form-label" style={{ marginBottom: '4px', display: 'block' }}>Import Mode</label>
+                  <label className="form-label" style={{ marginBottom: '4px', display: 'block' }}>How to import</label>
                   <div className="radio-group" style={{ display: 'flex', gap: '20px', margin: '8px 0' }}>
                     <label className="radio-option" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
                       <input
@@ -855,7 +877,7 @@ export default function CampaignDetail() {
                         disabled={!isEditable || submittingCsv}
                         style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }}
                       />
-                      Append to existing
+                      Add to my current contacts
                     </label>
                     <label className="radio-option" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
                       <input
@@ -867,10 +889,7 @@ export default function CampaignDetail() {
                         disabled={!isEditable || submittingCsv}
                         style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }}
                       />
-                      Replace list
-                      <span style={{ fontSize: '0.74rem', color: '#F59E0B', fontWeight: 500, marginLeft: '6px' }}>
-                        — This will replace your existing contacts
-                      </span>
+                      Start fresh (replaces existing contacts)
                     </label>
                   </div>
                 </div>
@@ -881,7 +900,7 @@ export default function CampaignDetail() {
                     className="btn btn-primary"
                     disabled={!isEditable || submittingCsv || !csvFile}
                   >
-                    {submittingCsv ? 'Importing...' : 'Import CSV'}
+                    {submittingCsv ? 'Importing...' : 'Upload Contacts'}
                   </button>
                   <button
                     type="button"
@@ -889,14 +908,14 @@ export default function CampaignDetail() {
                     onClick={handleDownloadSampleCsv}
                     style={{ background: 'none', border: 'none', padding: 0 }}
                   >
-                    Download Sample CSV Template
+                    Download Example Spreadsheet
                   </button>
                 </div>
                 <div style={{ marginTop: '14px', borderTop: '1px solid var(--border-subtle)', paddingTop: '12px' }}>
                   <span style={{ fontSize: '0.74rem', color: 'var(--muted-foreground)', display: 'block', lineHeight: '1.45' }}>
-                    <strong>CSV Columns Auto-Mapping Guide:</strong>
+                    <strong>How columns in your spreadsheet are matched:</strong>
                     <br />
-                    The parser maps columns like <code>email / mail</code> to email, <code>company / org</code> to company, <code>first_name / fname</code> to first name, and <code>role / job title</code> to role. Any other columns are imported as custom tags (e.g. <code>{"{{website}}"}</code>).
+                    The app matches columns named <code>email</code> or <code>mail</code> to the recipient's email address. It also automatically recognizes columns like <code>company</code>, <code>first_name</code>, and <code>role</code>. Any additional columns you upload can be used as custom templates (for example, <code>{"{{website}}"}</code>).
                   </span>
                 </div>
               </form>
@@ -924,7 +943,7 @@ export default function CampaignDetail() {
                 className={`tab-btn${activeTab === 'failed' ? ' active' : ''}`}
                 onClick={() => setActiveTab('failed')}
               >
-                Failed <span className="tab-badge">{recipients.filter(r => r.status === 'failed').length}</span>
+                Delivery Failures <span className="tab-badge">{recipients.filter(r => r.status === 'failed').length}</span>
               </button>
             </div>
 
@@ -971,7 +990,7 @@ export default function CampaignDetail() {
                     pointerEvents: 'none',
                     textAlign: 'center'
                   }}>
-                    Checks your sender inbox for bounced/returned email notifications and marks those contacts as failed.
+                    Checks your sender mailbox for emails that were returned or couldn't be delivered, and marks those contacts as failed.
                   </span>
                 )}
               </div>
@@ -981,14 +1000,14 @@ export default function CampaignDetail() {
           {activeTab === 'all' ? (
             <>
               <div className="flex-between" style={{ padding: '18px 22px', borderBottom: '1px solid var(--border-subtle)' }}>
-                <h2 className="section-title">Outreach Log</h2>
+                <h2 className="section-title">Contacts & Send Results</h2>
                 <button
                   className="btn btn-secondary"
                   style={{ fontSize: '0.8rem', padding: '6px 12px' }}
                   onClick={handleDownloadCsv}
                   disabled={recipients.length === 0}
                 >
-                  Download CSV
+                  Download Contacts List
                 </button>
               </div>
               <div style={{ overflowX: 'auto' }}>
@@ -1027,7 +1046,7 @@ export default function CampaignDetail() {
                           {r.sent_at ? new Date(r.sent_at).toLocaleString() : '—'}
                         </td>
                         <td style={{ fontSize: '0.82rem', color: r.status === 'failed' ? 'var(--error)' : 'var(--muted-foreground)' }}>
-                          {r.error_message || '—'}
+                          {getFriendlyErrorMessage(r.error_message)}
                         </td>
                         {isEditable && (
                           <td style={{ textAlign: 'center' }}>
@@ -1112,7 +1131,7 @@ export default function CampaignDetail() {
         <div className="modal-backdrop">
           <div className="modal-box" style={{ maxWidth: '440px' }}>
             <div className="modal-header">
-              <h3 className="modal-title">Reset Campaign Status</h3>
+              <h3 className="modal-title">Retry Campaign from Scratch</h3>
               <button className="modal-close" onClick={() => setConfirmResetOpen(false)}>&times;</button>
             </div>
             <div className="modal-body" style={{ textAlign: 'center', padding: '30px 24px' }}>
@@ -1132,10 +1151,10 @@ export default function CampaignDetail() {
                 </svg>
               </div>
               <p style={{ marginBottom: '14px', fontSize: '1rem', fontWeight: 700, color: 'var(--foreground)' }}>
-                Reset Campaign Status?
+                Restart campaign from the beginning?
               </p>
               <p style={{ marginBottom: '24px', fontSize: '0.85rem', color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
-                Resetting will reset all sent history. Starting the campaign will send emails to all recipients again. If you only want to send to new contacts, simply add them and click Start without resetting.
+                This will clear your delivery history and let you start sending emails to all contacts in this list again from the very beginning.
               </p>
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                 <button className="btn btn-secondary" onClick={() => setConfirmResetOpen(false)}>
@@ -1145,7 +1164,7 @@ export default function CampaignDetail() {
                   handleAction('reset');
                   setConfirmResetOpen(false);
                 }}>
-                  Confirm Reset
+                  Restart Campaign
                 </button>
               </div>
             </div>

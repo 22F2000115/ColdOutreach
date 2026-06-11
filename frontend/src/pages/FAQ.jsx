@@ -29,13 +29,13 @@ const FAQ_DATA = [
     id: 4,
     category: 'ai',
     question: 'How does the AI Template Generator work?',
-    answer: 'Navigate to the Outreach AI tab (available for Pro accounts). Fill in your Role, Objective, Target Audience, and Offer details. You can further customize the tone, writing style, length, formality, and CTA strength. Clicking "Generate Template" uses our LLM integration via Groq to generate 3 high-converting subject line options and 3 copy variations.'
+    answer: 'Navigate to Outreach AI in the sidebar (available on Pro accounts). Select your outreach type — Auto Detect, Job Outreach, Sales, Partnership, or Other. Type a plain-language description of what you want to say and to whom in the prompt box. Optionally add context about yourself or your product in the "Additional Context" field so the AI writes real prose instead of generic placeholders. Click "Generate Template" to receive a single, campaign-ready subject line and email body powered by Google Gemini (with Groq as automatic fallback).'
   },
   {
     id: 5,
     category: 'ai',
-    question: 'What does the "Spam Trigger Warning" indicate?',
-    answer: 'The system scans your template subjects and bodies against a database of common spam-trigger words (e.g., "guarantee", "risk free"). If flagged phrases are detected, they are highlighted at the bottom of the template. We recommend replacing them with conversational synonyms to maximize deliverability.'
+    question: 'How do {{placeholder}} variables work in generated templates?',
+    answer: 'The generated template uses {{double_curly_braces}} placeholders only for data that is genuinely recipient-specific — such as {{first_name}}, {{company}}, or {{role}}. These are highlighted visually in the output so you can see exactly which fields will be personalized per contact. The more context you provide in the "Additional Context" field, the fewer placeholders the AI will use, since it writes real facts directly into the email prose instead.'
   },
   {
     id: 6,

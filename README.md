@@ -35,15 +35,14 @@ ColdOutreach lets you run personalized cold email campaigns from your own machin
 - Scan inboxes and mark bounced records automatically as non-blocking background tasks
 
 **Outreach AI (Pro Plan)**
-- AI email generator powered by Groq (`llama-3.3-70b-versatile`)
-- Generates multiple subject line options and three full email variations per request
-- Rate limited dynamically (15 requests/hour for trial tier, 20 requests/hour for pro tier)
-- Controls: tone, writing style, email length, formality level, CTA strength
-- Quick-start presets for Job Seeker, SaaS Pitch, Freelancer, B2B Sales
-- Spam phrase detection with flagged word highlighting
-- Subject line effectiveness scoring (personalization, character count, power words)
+- AI email generator powered by Google Gemini (primary) with Groq (`llama-3.3-70b-versatile`) as automatic fallback
+- Describe your email goal in plain language — the AI generates a single, campaign-ready subject + body template
+- Outreach type selector: Auto Detect, Job Outreach, Sales, Partnership, Other
+- Optional context field to inject sender/product details and reduce placeholder count
+- Clickable example prompts for quick-start inspiration
+- Smart `{{placeholder}}` variable highlighting in the generated output
 - Save generated templates to a reusable library
-- Inject templates directly into draft campaigns
+- Inject templates directly into draft or paused campaigns
 
 **Activity History**
 - Per-user action log - campaign runs, sends, SMTP changes, plan updates
@@ -98,7 +97,6 @@ ColdOutreach/
 │   ├── security.py          -- Fernet encryption helpers for SMTP passwords
 │   ├── activity.py          -- Activity log writer utility
 │   ├── database.py          -- SQLAlchemy engine and session setup
-│   ├── config.py            -- Configuration constants
 │   ├── schemas.py           -- Pydantic validation schemas
 │   ├── seed.py              -- Database seeders for defaults
 │   ├── dependencies.py      -- FastAPI dependencies, database helpers, and rate limiter definitions
@@ -320,7 +318,7 @@ Click Start Campaign. The background worker begins sending sequentially. Track p
 
 **7. Use Outreach AI (Pro accounts)**
 
-Go to the Outreach AI tab. Fill in your role, objective, target audience, and offer details. Select tone, writing style, email length, formality, and CTA strength. Click Generate Template. Review, edit, and copy the result or push it directly into a draft campaign.
+Go to Outreach AI in the sidebar. Select an outreach type (or leave on Auto Detect), describe your email goal in the prompt box, optionally add context about yourself or your product, then click **Generate Template**. Review the generated subject and body — variables are highlighted in `{{double_curly_braces}}`. Copy the result, save it to the template library, or push it directly into a draft campaign.
 
 **8. Review activity**
 

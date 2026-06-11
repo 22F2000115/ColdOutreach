@@ -3,31 +3,8 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 
-class AIEmailRequest(BaseModel):
-    context_type: Optional[str] = None
-    context_data: Optional[dict] = None
-    sender_name: Optional[str] = None
-
-    role: Optional[str] = None
-    objective: Optional[str] = None
-    target_audience: Optional[str] = None
-    skills_or_offer: Optional[str] = None
-    additional_context: Optional[str] = None
-    tone: Optional[str] = None
-    length: Optional[str] = None
-    formality: Optional[str] = None
-    cta_strength: Optional[str] = None
-    writing_style: Optional[str] = None
-
-
-class AIGenerateSubjectsRequest(BaseModel):
-    role: str
-    objective: str
-    target_audience: str
-    skills_or_offer: Optional[str] = None
-    existing_subjects: Optional[List[str]] = None
-    tone: Optional[str] = "professional"
-    count: Optional[int] = 3
+class AITemplatePromptRequest(BaseModel):
+    prompt: str
 
 
 class TemplateCreateRequest(BaseModel):

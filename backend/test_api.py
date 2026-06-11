@@ -588,35 +588,24 @@ def run_tests():
     headers_pro = {"Authorization": f"Bearer {login_response_pro.json()['access_token']}"}
 
     gen_res = client.post(
-        "/api/ai/generate-email",
+        "/api/ai/generate-template",
         headers=headers_pro,
         json={
-            "role": "Founder",
-            "objective": "Sell cold outreach software",
-            "target_audience": "Lead generation agencies",
-            "skills_or_offer": "Outbound emailing platform scaling automatically",
-            "tone": "startup-style",
-            "length": "medium",
-            "formality": "informal",
-            "cta_strength": "soft",
-            "writing_style": "conversational",
-            "sender_name": "Test Founder"
+            "prompt": "Write a short cold email from a SaaS founder to CTOs at Series A startups asking for a 15-min demo. Keep it professional and concise."
         }
     )
-    # Note: Groq call might fail if API key is not configured, but if it runs, let's assert.
-    # To prevent tests failing in environment without API keys, we skip Groq assertions if key is missing.
-    api_key_configured = bool(os.getenv("GROQ_API_KEY"))
+    # Note: AI call might fail if API key is not configured; skip live assertions if missing.
+    api_key_configured = bool(os.getenv("GROQ_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
     if api_key_configured:
         assert gen_res.status_code == 200
         gen_json = gen_res.json()
-        assert "subjects" in gen_json
-        assert len(gen_json["subjects"]) == 3
-        assert "variations" in gen_json
-        assert len(gen_json["variations"]) == 3
-        assert "variables" in gen_json
+        assert "subject" in gen_json
+        assert "body" in gen_json
+        assert isinstance(gen_json["subject"], str) and len(gen_json["subject"]) > 0
+        assert isinstance(gen_json["body"], str) and len(gen_json["body"]) > 0
         print("AI Template Generation Endpoint OK.")
     else:
-        print("Groq API key missing. Skipped Groq API live assertions.")
+        print("AI API key missing. Skipped AI live assertions.")
 
     print("Testing Template Library CRUD...")
     # Create template

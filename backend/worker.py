@@ -496,8 +496,6 @@ def run_bounce_sync(campaign_id: int, smtp_settings_id: int):
 
 async def auto_bounce_sync_loop():
     """Run bounce synchronization for all running campaigns periodically."""
-    import asyncio
-
     # Wait 10 seconds after server start before running the first check
     await asyncio.sleep(10)
 

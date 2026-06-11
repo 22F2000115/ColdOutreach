@@ -277,11 +277,11 @@ function CampaignRow({ campaign, isOpen, onToggle }) {
             {total} leads
           </span>
           <span style={{ fontSize: '0.76rem', color: '#10B981', fontWeight: 600 }}>
-            {sent} ✓
+            {sent} delivered
           </span>
           {failed > 0 && (
             <span style={{ fontSize: '0.76rem', color: '#F43F5E', fontWeight: 600 }}>
-              {failed} ✗
+              {failed} failed
             </span>
           )}
         </div>
@@ -316,7 +316,7 @@ function CampaignRow({ campaign, isOpen, onToggle }) {
           {detail && !loadingDetail && (
             <>
               {/* Aggregate stats */}
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '14px' }}>
                 {[
                   { label: 'Total Leads', value: detail.total_leads, color: '#6366F1' },
                   { label: 'Delivered',   value: detail.stats.delivered, color: '#10B981' },
@@ -327,9 +327,8 @@ function CampaignRow({ campaign, isOpen, onToggle }) {
                     background: 'var(--bg-card)',
                     border: '1px solid var(--border-card)',
                     borderRadius: '8px',
-                    padding: '8px 14px',
+                    padding: '10px 14px',
                     display: 'flex', flexDirection: 'column', alignItems: 'center',
-                    minWidth: '72px',
                   }}>
                     <span style={{ fontSize: '1.1rem', fontWeight: 800, color: s.color, fontFamily: 'var(--font-heading)' }}>
                       {s.value}
@@ -379,7 +378,7 @@ function CampaignRow({ campaign, isOpen, onToggle }) {
                               background: ev.status === 'delivered' ? 'rgba(16,185,129,0.1)' : 'rgba(244,63,94,0.1)',
                               borderRadius: '4px', padding: '2px 7px',
                             }}>
-                              {ev.status === 'delivered' ? '✓ Delivered' : '✗ Failed'}
+                              {ev.status === 'delivered' ? 'Delivered' : 'Failed'}
                             </span>
                           </td>
                           <td style={{ padding: '7px 10px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
@@ -425,10 +424,10 @@ export default function History() {
   const activeCampaigns = campaigns.filter(c => c.status !== 'draft');
   const stats = summary
     ? [
-        { label: 'Emails Sent',       value: summary.total_emails_sent,  color: '#6366F1', icon: <IconMail /> },
-        { label: 'Campaigns Run',     value: summary.total_campaigns_run, color: '#06B6D4', icon: <IconPaperPlane /> },
-        { label: 'Delivered',         value: summary.delivered_count,     color: '#10B981', icon: <IconCheckCircle /> },
-        { label: 'Failed / Bounced',  value: summary.failed_count,        color: '#F43F5E', icon: <IconAlertCircle /> },
+        { label: 'Emails Sent',        value: summary.total_emails_sent,  color: '#6366F1', icon: <IconMail /> },
+        { label: 'Campaigns Run',      value: summary.total_campaigns_run, color: '#06B6D4', icon: <IconPaperPlane /> },
+        { label: 'Delivered',          value: summary.delivered_count,     color: '#10B981', icon: <IconCheckCircle /> },
+        { label: 'Failed to Deliver',  value: summary.failed_count,        color: '#F43F5E', icon: <IconAlertCircle /> },
       ]
     : null;
 
@@ -488,13 +487,13 @@ export default function History() {
   const handleSyncBounces = async () => {
     const activeCamps = campaigns.filter(c => c.status !== 'draft');
     if (activeCamps.length === 0) {
-      setToast({ message: 'No active campaigns found to sync bounces.', type: 'error' });
+      setToast({ message: 'No active campaigns found. Start a campaign first to check for failed deliveries.', type: 'error' });
       return;
     }
     setSubmitting(true);
     try {
       await Promise.all(activeCamps.map(c => api.post(`/api/campaigns/${c.id}/sync-bounces`)));
-      setToast({ message: 'Synchronized bounces successfully for all active campaigns.', type: 'success' });
+      setToast({ message: 'Done! Your failed delivery records have been updated for all active campaigns.', type: 'success' });
 
       // Refresh the page data
       fetchLogs(0, false);
@@ -559,6 +558,7 @@ export default function History() {
             className="btn btn-secondary"
             onClick={handleSyncBounces}
             disabled={submitting}
+            title="Scans your sender mailbox for emails that were returned or rejected"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -569,13 +569,14 @@ export default function History() {
             }}
           >
             {submitting ? <IconSpinner /> : <IconRefresh />}
-            <span>Sync Bounces</span>
+            <span>{submitting ? 'Checking…' : 'Check Deliveries'}</span>
           </button>
           <button
             id="export_csv_btn"
             className="btn btn-secondary"
             onClick={handleExportCSV}
             disabled={submitting || logs.length === 0}
+            title="Saves your activity history as a spreadsheet file (.csv)"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -586,7 +587,7 @@ export default function History() {
             }}
           >
             <IconDownload />
-            <span>Export CSV</span>
+            <span>Download Log</span>
           </button>
         </div>
       </div>
@@ -632,8 +633,8 @@ export default function History() {
           {[
             { label: 'All', value: '' },
             { label: 'Campaigns', value: 'campaign' },
-            { label: 'SMTP', value: 'smtp' },
-            { label: 'Account', value: 'profile' },
+            { label: 'Sender Account', value: 'smtp' },
+            { label: 'Account Changes', value: 'profile' },
           ].map(f => (
             <button
               key={f.value}
@@ -663,24 +664,38 @@ export default function History() {
           ].map(d => (
             <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 600 }}>{d.label}</span>
-              <input
-                type={d.val ? 'date' : 'text'}
-                placeholder={d.placeholder}
-                value={d.val}
-                onChange={e => d.set(e.target.value)}
-                onFocus={(e) => { e.target.type = 'date'; }}
-                onBlur={(e) => { if (!e.target.value) e.target.type = 'text'; }}
-                className="form-control"
-                style={{
-                  height: '36px',
-                  padding: '6px 12px',
-                  fontSize: '0.84rem',
-                  width: '135px',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  boxSizing: 'border-box',
-                }}
-              />
+              <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                  fill="none" stroke="var(--text-muted)" strokeWidth="2.2"
+                  strokeLinecap="round" strokeLinejoin="round"
+                  style={{ position: 'absolute', left: '10px', pointerEvents: 'none', zIndex: 1 }}
+                >
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                <input
+                  type={d.val ? 'date' : 'text'}
+                  placeholder={d.placeholder}
+                  value={d.val}
+                  onChange={e => d.set(e.target.value)}
+                  onFocus={(e) => { e.target.type = 'date'; }}
+                  onBlur={(e) => { if (!e.target.value) e.target.type = 'text'; }}
+                  className="form-control"
+                  style={{
+                    height: '36px',
+                    paddingLeft: '32px',
+                    paddingRight: '10px',
+                    fontSize: '0.84rem',
+                    width: '145px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
             </div>
           ))}
           {(eventType || fromDate || toDate) && (
@@ -699,6 +714,19 @@ export default function History() {
       </div>
 
       {/* ── Two-Column Body ── */}
+      {/* Section orientation labels */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '20px', marginBottom: '8px' }} className="history-two-col">
+        <div>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+            What happened?
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
+            How did each campaign do?
+          </div>
+        </div>
+      </div>
       <div className="history-two-col" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '20px', alignItems: 'stretch' }}>
 
         {/* ── Left: Activity Feed ── */}
@@ -733,9 +761,29 @@ export default function History() {
                   </svg>
                 </div>
                 <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>No activity yet</div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.84rem', maxWidth: '260px', margin: '0 auto' }}>
-                  Start a campaign or connect an SMTP account to see events here.
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.84rem', maxWidth: '260px', margin: '0 auto 16px' }}>
+                  Once you start a campaign or connect a sender account, every action will appear here.
                 </div>
+                <a
+                  href="/"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    fontSize: '0.82rem', fontWeight: 700,
+                    color: 'var(--primary)',
+                    textDecoration: 'none',
+                    padding: '7px 14px',
+                    border: '1px solid var(--primary)',
+                    borderRadius: '8px',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--primary-subtle)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+                  </svg>
+                  Go to Campaigns
+                </a>
               </div>
             )}
 

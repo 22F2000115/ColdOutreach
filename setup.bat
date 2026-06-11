@@ -178,7 +178,8 @@ echo  [OK]  backend\.env generated successfully.
 echo        JWT_SECRET_KEY  = [64-char hex]
 echo        ENCRYPTION_KEY  = [Fernet key]
 echo        ADMIN_ACCOUNTS  = !ADMIN_EMAIL! : [password set]
-echo        GROQ_API_KEY    = Replace the placeholder value to enable Outreach AI
+echo        GOOGLE_API_KEY  = Replace the placeholder value (Gemini - primary AI)
+echo        GROQ_API_KEY    = Replace the placeholder value (Groq - fallback AI)
 echo.
 echo  NOTE: Do not commit backend\.env to version control.
 echo        It is already excluded by .gitignore.
@@ -297,7 +298,7 @@ echo    database.db           SQLite schema applied (alembic upgrade head)
 echo    frontend\node_modules Frontend packages installed
 echo.
 echo   Next steps:
-echo    - Edit backend\.env and set GROQ_API_KEY to enable Outreach AI
+echo    - Edit backend\.env and set GOOGLE_API_KEY (Gemini) or GROQ_API_KEY to enable Outreach AI
 echo    - Run start.bat to launch the application
 echo    - Run stop.bat to shut everything down
 echo.

@@ -1,56 +1,21 @@
 """
-This router handles AI assistant functions, including cold email variation generation
-and alternative subject lines creation via Gemini or Groq API integrations.
+This router handles AI assistant functions — generates cold email templates
+from a plain-language prompt via Gemini or Groq API.
 """
 
 import json
 import os
-import re
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
 
 from auth import get_current_user
-from database import get_db
 from dependencies import limiter
 from models import User
-from schemas import AIEmailRequest, AIGenerateSubjectsRequest
+from schemas import AITemplatePromptRequest
 
 router = APIRouter()
 
-# ── AI Context Definitions ─────────────────────────────────────────────────────
 
-CONTEXT_REQUIRED_FIELDS = {
-    "Saas": ["product_name", "target_company", "target_role", "key_benefit", "cta"],
-    "saas_demo": ["product_name", "target_company", "target_role", "key_benefit", "cta"],
-    "Agency": ["agency_name", "service", "target_company", "target_role", "pain_point", "cta"],
-    "Saas agency": ["agency_name", "service", "target_company", "target_role", "pain_point", "cta"],
-    "agency_outreach": ["agency_name", "service", "target_company", "target_role", "pain_point", "cta"],
-    "Job": ["target_role", "target_company", "your_background", "ask_type"],
-    "job_seeker": ["target_role", "target_company", "your_background", "ask_type"],
-    "Freelancer": ["your_skill", "target_company", "target_role", "value_offer", "cta"],
-    "freelancer_pitch": ["your_skill", "target_company", "target_role", "value_offer", "cta"],
-    "B2B": ["your_company", "product", "target_company", "target_role", "pain_point", "cta"],
-    "b2b_sales": ["your_company", "product", "target_company", "target_role", "pain_point", "cta"],
-    "saas": ["product_name", "target_company", "target_role", "key_benefit", "cta"],
-    "agency": ["agency_name", "service", "target_company", "target_role", "pain_point", "cta"],
-    "job": ["target_role", "target_company", "your_background", "ask_type"],
-    "freelancer": ["your_skill", "target_company", "target_role", "value_offer", "cta"],
-    "b2b": ["your_company", "product", "target_company", "target_role", "pain_point", "cta"],
-    "investor_outreach": ["startup_name", "sector", "stage", "traction", "ask_size", "why_this_investor"],
-    "partnership": ["your_company", "partner_company", "partnership_type", "mutual_benefit", "cta"],
-    "influencer_outreach": ["brand_name", "creator_handle", "collaboration_type", "offer", "cta"],
-    "podcast_pitch": ["show_name", "episode_angle", "your_credentials", "why_their_audience"],
-    "event_conference": ["event_name", "outreach_type", "target_name", "value_to_them"],
-    "nonprofit_fundraising": ["org_name", "cause", "target_type", "ask"],
-    "real_estate": ["agent_name", "outreach_type", "target_description", "property_or_offer"],
-}
-
-VALID_TONES = {"professional", "casual", "startup-style", "bold", "recruiter-friendly", "empathetic"}
-VALID_LENGTHS = {"short", "medium", "long"}
-VALID_FORMALITIES = {"formal", "informal"}
-VALID_CTA_STRENGTHS = {"soft", "direct"}
-VALID_WRITING_STYLES = {"conversational", "structured", "narrative"}
-
+# ── AI Provider Helpers ────────────────────────────────────────────────────────
 
 def _call_gemini(system_prompt: str, user_prompt: str, temperature: float, max_tokens: int) -> str:
     """Call Gemini API and return raw response content string."""
@@ -103,159 +68,183 @@ def _call_ai_with_fallback(system_prompt: str, user_prompt: str, temperature: fl
     raise RuntimeError(f"All AI providers failed — {'; '.join(errors)}")
 
 
-def _build_ai_prompts(role_val, objective_val, target_audience_val, skills_or_offer_val,
-                      additional_context_val, sender_name_val, tone_val, length_val,
-                      formality_val, cta_strength_val, writing_style_val):
-    """Build system and user prompts for AI email generation."""
+# ── System Prompt ──────────────────────────────────────────────────────────────
 
-    system_prompt = (
-        "You are a precision cold email copywriter. Your job is to write cold outreach emails that get replies from busy, "
-        "skeptical people who receive 50+ cold emails per day and delete most of them in under 3 seconds.\n\n"
+GENERATE_TEMPLATE_SYSTEM_PROMPT = """
+You are a professional email copywriter. Your sole output is a single,
+complete, ready-to-send email template.
 
-        "CORE PRINCIPLES:\n"
-        "- Every email must pass the 'real human' test. It must read as if written by a thoughtful senior professional, not software.\n"
-        "- Never start from the sender. Start from the recipient's world — what they care about, what they're dealing with, what makes them pause.\n"
-        "- Every benefit claim must be anchored to a specific number, company type, or timeframe. 'Better results' is rejected. "
-        "'34% increase in reply rates within 3 weeks' is accepted.\n"
-        "- The opener is everything. If the first sentence doesn't create a specific, relevant reason to keep reading, the rest is worthless.\n"
-        "- Every word must earn its place. Cut anything that doesn't add information or forward motion.\n\n"
+OUTPUT FORMAT
+Return exactly one JSON object with exactly two keys: "subject" and "body".
+No markdown, no code fences, no commentary, no extra keys. Raw JSON only.
 
-        "OUTPUT: Raw JSON only. No markdown. No code fences. No explanation text outside the JSON. "
-        "The JSON must contain exactly three top-level keys: 'subjects', 'variations', 'variables'.\n\n"
+CONTEXT USAGE — HIGHEST PRIORITY INSTRUCTION
+The user may provide additional context after their main prompt under the
+heading "CONTEXT ABOUT ME / MY PRODUCT". If context is provided:
+- Extract real facts from it and write them directly into the email as prose.
+- Do NOT convert a real fact into a placeholder. If the user says their
+  product costs $29/month — write "$29/month", not {{price}}.
+- Only use a placeholder if the information was genuinely not provided.
+- A fully-contexted email may need only 2–3 placeholders. That is ideal.
+- The more context provided, the fewer placeholders the email should have.
 
-        "--- KEY 1: 'subjects' ---\n"
-        "An array of exactly 3 subject line strings.\n"
-        "Rules:\n"
-        "- Each under 45 characters. No end punctuation.\n"
-        "- Subject 1 (Curiosity): Creates an incomplete or counterintuitive idea that forces the recipient to open to resolve it.\n"
-        "- Subject 2 (Specific): Personalization-first — MUST contain {{first_name}} or {{company}}. Refers to a specific outcome or situation.\n"
-        "- Subject 3 (Direct): States the exact value or result plainly, no mystery. The reader knows exactly what's inside.\n"
-        "- BANNED subject words/phrases (never use): 'Quick question', 'Following up', 'Introduction', 'Just wanted to', "
-        "'Checking in', 'Touching base', 'Partnership opportunity', 'Collaboration', 'Opportunity', 'Exciting'.\n\n"
+EMAIL TYPE
+The user may prefix their prompt with "Email type: X". If they do, use
+that type exactly. Otherwise infer the type from the prompt content.
+Priority: explicit type instruction > inferred type.
 
-        "--- KEY 2: 'variations' ---\n"
-        "An array of exactly 3 objects. Each object has a 'name' key and a 'body' key. "
-        "The three variations must be genuinely different in opening strategy, structure, and CTA — not just the same email with different words.\n\n"
+PLACEHOLDER PHILOSOPHY
+Use {{double_curly_braces}} ONLY for data that is genuinely recipient-specific
+and unknowable at write time. Ask: "Would every recipient have a different
+value here, and did the user not provide it in context?" If both true —
+placeholder. Otherwise — prose.
 
-        "VARIATION 1 — name must be exactly: 'Hook-First'\n"
-        "Opening strategy: The very first sentence must be a sharp, specific observation about the recipient's role, industry, or situation "
-        "— a data point, a counterintuitive fact, or a bold claim that signals you understand their world without referencing the sender at all. "
-        "Do NOT introduce yourself or your company in the first sentence. "
-        "Second sentence bridges from that observation to why you're reaching out. "
-        "Third sentence states your offer in one clear, concrete line. "
-        "CTA: A single low-friction question — it should feel almost effortless to reply yes. (e.g. 'Worth a look?' / 'Does this match what you're seeing?') "
-        "End with a P.S. that delivers one concrete proof point: a real metric, a specific client type, or a tangible outcome.\n\n"
+Permitted tokens (use only what the email genuinely needs):
+{{first_name}}, {{last_name}}, {{company}}, {{role}}, {{email}},
+{{sender_name}}, {{sender_phone}}, {{sender_linkedin}}, {{sender_github}},
+{{college}}, {{degree}}, {{project_1}}, {{project_2}}, {{years_experience}},
+{{specific_reason}}
 
-        "VARIATION 2 — name must be exactly: 'PAS'\n"
-        "Opening strategy: Pain-Agitate-Solve structure. "
-        "Sentence 1: Name the exact frustration or bottleneck this type of person faces in their role — be specific enough that it feels personal. "
-        "Sentence 2: State the real cost of that problem not being solved (lost revenue, wasted hours, missed growth — pick the most relevant). "
-        "Sentence 3: Introduce your solution as the direct answer to that pain. "
-        "Follow with exactly 3 bullet points — each bullet must describe a specific outcome (what changes for the recipient), not a feature. "
-        "Bullet format: '- [specific result] — [brief how/proof]'. "
-        "CTA: Direct ask — state the exact format and rough time commitment (e.g. 'Open for a 15-min call Thursday or Friday?'). "
-        "No P.S. for this variation.\n\n"
+Rules:
+- Never use [brackets], <angle_brackets>, or ALL_CAPS as placeholders.
+- Never fill in a real value where a placeholder belongs.
+- Invent new {{snake_case}} tokens only when the concept is truly
+  recipient-specific and not covered above.
+- Target 2–5 placeholders when context is provided. 4–7 without context.
+- 10+ placeholders means you are over-templating — trim ruthlessly.
 
-        "VARIATION 3 — name must be exactly: 'Proof-First'\n"
-        "Opening strategy: Lead with a specific, believable mini case study in one tight sentence. "
-        "Use a realistic, specific company type — NOT 'a client' or 'a company'. Use '\\'a 12-person SaaS team in HR tech\\'' or '\\'a DTC brand doing $2M/year\\''. "
-        "Include one concrete metric in this sentence (percentage, time saved, revenue impact). "
-        "Sentence 2 connects that result to why it's directly relevant to this recipient's situation. "
-        "Sentence 3 briefly explains the mechanism — why it worked, at the highest level. "
-        "CTA: Soft — offer something low-risk (a breakdown, a relevant example, a quick look). "
-        "End with a P.S. that teases a second result or a related outcome to create additional pull.\n\n"
+BANNED PHRASES — never use under any circumstance:
+"commitment to innovation", "commitment to excellence",
+"I hope this finds you well", "I wanted to reach out",
+"passionate about my work", "strong passion for",
+"valuable addition to your team", "touch base", "circle back",
+"I am excited to explore new opportunities",
+"technical skills in areas such as", "game-changing", "cutting-edge",
+"revolutionary", "synergies", "I admire your mission and values",
+"I believe I would be a great fit"
 
-        "WRITING RULES (apply to all 3 variations without exception):\n"
-        "BANNED first words/phrases for the opening sentence of any body: 'I', 'We', 'My', 'Hi {{first_name}},\\n\\nI', "
-        "'I hope', 'I wanted', 'I came across', 'I noticed', 'I saw', 'Just', 'As a', 'Our company', 'We help', 'We are'.\n"
-        "BANNED phrases anywhere in the body: 'I hope this finds you well', 'I wanted to reach out', 'I am writing to', "
-        "'Touch base', 'Circle back', 'Synergies', 'Game-changing', 'Revolutionary', 'World-class', 'Cutting-edge', "
-        "'Best-in-class', 'Innovative solution', 'Passionate about', 'Leverage', 'Utilize', 'Furthermore', 'Additionally', "
-        "'In conclusion', 'That being said', 'What sets us apart', 'Hope this helps', 'Please do not hesitate', "
-        "'Feel free to reach out', 'Let me know if you have any questions', 'I look forward to hearing from you'.\n"
-        "- The word 'I' may appear a maximum of 2 times in a single variation body. Count strictly.\n"
-        "- Every paragraph must be 1-3 sentences maximum. No walls of text.\n"
-        "- Placeholder syntax: use {{first_name}}, {{company}}, {{sender_name}} with double curly braces ONLY. "
-        "Never invent placeholder slots for things that should be concrete values (e.g. do NOT write {{metric}} or {{result}} — write an actual number).\n"
-        "- Greeting: 'Hi {{first_name}},' followed by \\n\\n then the body.\n"
-        "- Sign-off: '\\n\\nBest,\\n{{sender_name}}' — every variation must end with this exact format.\n"
-        "- Paragraph separation: double newline \\n\\n only. Bullet lists use '- ' prefix.\n\n"
-        "--- KEY 3: 'variables' ---\n"
-        "An array of all unique placeholder variable name strings found across ALL subjects and ALL variation bodies combined. "
-        "Lowercase snake_case only (e.g. ['first_name', 'company', 'sender_name']). No curly braces in this list.\n\n"
-        "FINAL CHECK before outputting: Read each variation's first sentence. If it mentions the sender, their company, or their product — rewrite it. "
-        "The reader must appear before the writer."
-    )
-    length_guide = {
-        "short": "under 100 words (body only, not counting greeting or sign-off)",
-        "medium": "120–160 words (body only, not counting greeting or sign-off)",
-        "long": "200–250 words (body only, not counting greeting or sign-off)"
-    }.get(length_val, "120–160 words")
+Rule behind the list: if the sentence could appear in ANY person's email
+to ANY company without changing a word — rewrite it until it can't.
 
-    cta_guide = (
-        "a low-friction interest check — feels almost effortless to say yes to (e.g. 'Worth a look?' / 'Does this resonate?' / 'Open to a quick look?')"
-        if cta_strength_val == "soft"
-        else "a specific, direct calendar ask — name the format and rough time (e.g. 'Open for a 15-min call Thursday?' / 'Book a slot here: {{calendar_link}}')"
-    )
+EMAIL TYPE STRUCTURES
+Apply the paragraph order for the detected type exactly.
+Do not rearrange, skip, merge, or add sections.
 
-    formality_guide = (
-        "formal register — full sentences, no contractions, professional vocabulary, no slang"
-        if formality_val == "formal"
-        else "informal register — contractions welcome, conversational vocabulary, can use short punchy sentences and light colloquialisms"
-    )
+── JOB / RECRUITING OUTREACH ──────────────────────────────────────────
+  1. GREETING + INTRO
+     "Hi {{first_name}}," on its own line, blank line after.
+     One sentence: who you are and what role or domain you are targeting.
+     If context provides sender's real name — use it as prose, not {{sender_name}}.
+     Specific — never "new opportunities."
 
-    style_guide = {
-        "conversational": "flowing prose, short paragraphs, sounds like a real conversation",
-        "structured": "structured with bullets and clear sections, logical and scannable",
-        "saas": "flowing prose, short paragraphs, sounds like a real conversation",
-        "agency": "flowing prose, short paragraphs, sounds like a real conversation",
-        "job": "flowing prose, short paragraphs, sounds like a real conversation",
-        "freelancer": "flowing prose, short paragraphs, sounds like a real conversation",
-        "b2b": "flowing prose, short paragraphs, sounds like a real conversation",
-        "narrative": "story-driven, narrative arc, reads like a mini case study or journey"
-    }.get(writing_style_val, "flowing prose, short paragraphs")
+  2. BACKGROUND + SKILLS
+     Education and hands-on technical skills.
+     If context provides real degree, college, or tech stack — write as prose.
+     No placeholders for information already given in context.
+     2–3 sentences. No vague claims.
 
-    user_prompt = (
-        f"Generate a complete cold email template package for this exact outreach scenario. "
-        f"Write as if you ARE the sender — in their voice, from their perspective:\n\n"
-        f"Sender Role / Identity: {role_val}\n"
-        f"Outreach Objective / Goal: {objective_val}\n"
-        f"Target Audience: {target_audience_val}\n"
-        f"Sender's Skills, Experience, Product, or Offer: {skills_or_offer_val}\n"
-    )
-    if additional_context_val:
-        user_prompt += f"Additional Context: {additional_context_val}\n"
-    user_prompt += f"Sender Name for sign-off (via {{{{sender_name}}}}): {sender_name_val}\n"
-    user_prompt += (
-        f"\nControl parameters — comply strictly:\n"
-        f"- Tone: {tone_val}\n"
-        f"- Length target: {length_val} — {length_guide}\n"
-        f"- Formality: {formality_val} — {formality_guide}\n"
-        f"- CTA style: {cta_strength_val} — {cta_guide}\n"
-        f"- Writing style: {writing_style_val} — {style_guide}\n\n"
-        f"Produce all 3 subject lines and all 3 body variations now. "
-        f"Make each variation structurally distinct — different opening strategy, different flow, different CTA. "
-        f"A reader who sees all three should not feel they are reading variations of the same email."
-    )
+  3. PROJECT HIGHLIGHTS
+     One or two concrete projects — what it was, what was built, what it showed.
+     If context describes real projects — use those descriptions as prose.
+     If not — use {{project_1}} and {{project_2}}.
 
-    return system_prompt, user_prompt
+  4. WHY THIS COMPANY / ROLE
+     Specific to {{company}} and {{role}}.
+     If context provides a reason — write it as prose.
+     If not — use {{specific_reason}}.
+     Never substitute generic enthusiasm for a missing reason.
 
+  5. CTA + RESUME
+     Mention attached resume. Soft invite. 1–2 sentences max.
 
-def _extract_variables(subjects, variations):
-    """Extract and normalize all {{variable}} placeholders from subjects and variation bodies."""
-    all_text = " ".join(subjects) + " " + " ".join(v.get("body", "") for v in variations)
-    raw_matches = re.findall(r"\{\{([^}]+)\}\}", all_text)
-    return sorted({m.strip().lower().replace(" ", "_") for m in raw_matches if m.strip()})
+  SIGN-OFF (blank line before, each on its own line):
+     Best regards,
+     {{sender_name}}
+     {{sender_phone}}
+     {{email}}
+     {{sender_linkedin}}
+     {{sender_github}}
 
+  Subject: role or domain + sender name. Under 70 chars, no trailing punctuation.
+  e.g. "Backend Developer Role – {{sender_name}}"
+  Never: "Job Inquiry", "Opportunity", or any generic subject.
 
-@router.post("/api/ai/generate-email")
-@limiter.limit("15/hour")
-def generate_ai_email(
+── SALES / COLD OUTREACH ──────────────────────────────────────────────
+  1. GREETING + HOOK
+     "Hi {{first_name}}," on its own line, blank line after.
+     One sentence tied to a specific problem their business likely faces.
+     If context describes the product or its customer — use it here.
+
+  2. VALUE PROPOSITION
+     What the product does and the exact problem it solves.
+     If context provides real product details — write as prose.
+     No jargon. 2–3 sentences.
+
+  3. PROOF POINT
+     One result, metric, or concrete reference.
+     If context provides a real metric — use it directly.
+     Never "we've helped many businesses like yours."
+
+  4. CTA
+     One ask. Clear and low-friction.
+     e.g. "Would a 20-minute call this week make sense?"
+
+  SIGN-OFF:
+     Best,
+     {{sender_name}}
+     {{sender_title}}
+
+  Subject: benefit or curiosity-driven. Under 70 chars.
+  Never "Following up" or "Quick question" as the full subject.
+
+── PARTNERSHIP / COLLABORATION ────────────────────────────────────────
+  1. GREETING + CONTEXT
+     "Hi {{first_name}}," on its own line, blank line after.
+     Why you are reaching out to them specifically.
+
+  2. WHAT YOU BRING
+     What you or your team does and why it is relevant.
+     Use real details from context if provided.
+
+  3. THE PROPOSAL
+     What you are proposing and the benefit to both sides.
+     Specific format or deliverable if possible.
+
+  4. NEXT STEP
+     One clear, low-friction suggested action.
+
+  SIGN-OFF:
+     Best,
+     {{sender_name}}
+     {{sender_company}}
+     {{sender_phone}} or {{email}}
+
+── OTHER / AMBIGUOUS ──────────────────────────────────────────────────
+  Default to a complete, professional structure for the stated purpose.
+  When in doubt write more rather than less.
+  Apply the same context usage, banned phrases, and placeholder rules.
+
+STRUCTURE RULES (all types)
+- Blank line between every paragraph.
+- Each paragraph: 2–4 sentences. No one-liners. No walls of text.
+- Sign-off always separated from last paragraph by a blank line.
+- Never omit sign-off fields to keep the email shorter.
+
+INTENT
+Honor any tone, length, or style instruction in the user's prompt exactly.
+Output exactly one subject and one body. No variants. No alternatives.
+"""
+
+# ── Endpoint ───────────────────────────────────────────────────────────────────
+
+@router.post("/api/ai/generate-template")
+@limiter.limit("20/hour")
+def generate_template_from_prompt(
     request: Request,
-    body: AIEmailRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    body: AITemplatePromptRequest,
+    current_user: User = Depends(get_current_user)
 ):
+    """Generate a single email template (subject + body) from a raw prompt string."""
     if current_user.plan == "trial":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -267,205 +256,46 @@ def generate_ai_email(
     if not gemini_key and not groq_key:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Neither Gemini nor Groq API keys are configured on the server. Please add GOOGLE_API_KEY or GROQ_API_KEY to the .env file."
+            detail="Neither Gemini nor Groq API keys are configured on the server."
         )
 
-    # 1. Parse and map fields (handle legacy input)
-    is_legacy = bool(body.context_type and body.context_data)
-
-    if is_legacy:
-        # Validate required fields for the chosen context
-        required = CONTEXT_REQUIRED_FIELDS.get(body.context_type)
-        if required is None:
-            raise HTTPException(status_code=400, detail=f"Unknown context_type: '{body.context_type}'.")
-        missing = [f for f in required if not body.context_data.get(f)]
-        if missing:
-            raise HTTPException(status_code=400, detail=f"Missing required fields for context '{body.context_type}': {missing}.")
-
-        role_map = {
-            "Job": "Student / Job Seeker",
-            "job_seeker": "Student / Job Seeker",
-            "job": "Student / Job Seeker",
-            "Freelancer": "Freelancer",
-            "freelancer_pitch": "Freelancer",
-            "freelancer": "Freelancer",
-            "B2B": "B2B Sales Representative",
-            "b2b_sales": "B2B Sales Representative",
-            "b2b": "B2B Sales Representative",
-            "Saas": "SaaS Founder/Salesperson",
-            "saas_demo": "SaaS Founder/Salesperson",
-            "saas": "SaaS Founder/Salesperson",
-            "Agency": "Agency Partner",
-            "agency_outreach": "Agency Partner",
-            "agency": "Agency Partner",
-            "investor_outreach": "Startup Founder",
-            "partnership": "Business Development Manager",
-            "influencer_outreach": "Brand Manager",
-            "podcast_pitch": "Guest Pitcher",
-            "event_conference": "Event Organizer",
-            "nonprofit_fundraising": "Fundraiser",
-            "real_estate": "Real Estate Agent"
-        }
-        role_val = role_map.get(body.context_type, "Outreach Specialist")
-        objective_val = f"Outreach for {body.context_type}"
-        target_audience_val = body.context_data.get("target_company") or body.context_data.get("target_name") or "Prospect"
-
-        details = []
-        for k, v in body.context_data.items():
-            details.append(f"{k}: {v}")
-        skills_or_offer_val = ", ".join(details)
-
-        additional_context_val = None
-        tone_val = "professional"
-        length_val = "medium"
-        formality_val = "formal"
-        cta_strength_val = "soft"
-        writing_style_val = "conversational"
-        sender_name_val = body.sender_name or "Sender"
-    else:
-        role_val = body.role
-        objective_val = body.objective
-        target_audience_val = body.target_audience
-        skills_or_offer_val = body.skills_or_offer
-        additional_context_val = body.additional_context
-        tone_val = body.tone or "professional"
-        length_val = body.length or "medium"
-        formality_val = body.formality or "formal"
-        cta_strength_val = body.cta_strength or "soft"
-        writing_style_val = body.writing_style or "conversational"
-        sender_name_val = body.sender_name or "Sender"
-
-    if not role_val or not objective_val or not target_audience_val or not skills_or_offer_val:
-        raise HTTPException(
-            status_code=400,
-            detail="Role, objective, target audience, and skills or offer parameters are required."
-        )
-
-    # 3. Validate enum fields
-    if tone_val not in VALID_TONES:
-        raise HTTPException(status_code=400, detail=f"Invalid tone '{tone_val}'. Must be one of: {sorted(VALID_TONES)}.")
-    if length_val not in VALID_LENGTHS:
-        raise HTTPException(status_code=400, detail=f"Invalid length '{length_val}'. Must be one of: {sorted(VALID_LENGTHS)}.")
-    if formality_val not in VALID_FORMALITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid formality '{formality_val}'. Must be one of: {sorted(VALID_FORMALITIES)}.")
-    if cta_strength_val not in VALID_CTA_STRENGTHS:
-        raise HTTPException(status_code=400, detail=f"Invalid cta_strength '{cta_strength_val}'. Must be one of: {sorted(VALID_CTA_STRENGTHS)}.")
-    if writing_style_val not in VALID_WRITING_STYLES:
-        raise HTTPException(status_code=400, detail=f"Invalid writing_style '{writing_style_val}'. Must be one of: {sorted(VALID_WRITING_STYLES)}.")
-
-    # 4. Build prompts
-    system_prompt, user_prompt = _build_ai_prompts(
-        role_val, objective_val, target_audience_val, skills_or_offer_val,
-        additional_context_val, sender_name_val, tone_val, length_val,
-        formality_val, cta_strength_val, writing_style_val
-    )
+    prompt = body.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
     try:
-        content = _call_ai_with_fallback(system_prompt, user_prompt, temperature=0.70, max_tokens=2500)
+        content = _call_ai_with_fallback(
+            GENERATE_TEMPLATE_SYSTEM_PROMPT,
+            prompt,
+            temperature=0.72,
+            max_tokens=1200
+        )
 
+        # Strip markdown fences if present
         if content.startswith("```"):
             lines = content.splitlines()
-            if lines[0].startswith("```"): lines = lines[1:]
-            if lines and lines[-1].startswith("```"): lines = lines[:-1]
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
             content = "\n".join(lines).strip()
 
         parsed = json.loads(content)
+        subject = parsed.get("subject") or ""
+        email_body = parsed.get("body") or ""
 
-        subjects = parsed.get("subjects") or parsed.get("subject")
-        if not subjects:
-            subjects = ["Cold outreach intro", "Quick question for {{first_name}}", "Idea for {{company}}"]
-        elif isinstance(subjects, str):
-            subjects = [subjects]
-        while len(subjects) < 3:
-            subjects.append(subjects[0] if subjects else "Quick query")
-        subjects = subjects[:3]
+        if not subject or not email_body:
+            raise ValueError("AI response missing 'subject' or 'body' field.")
 
-        variations = parsed.get("variations") or []
-        if not variations:
-            body_fallback = parsed.get("body") or "Hi {{first_name}},\n\nI wanted to reach out regarding {{company}}..."
-            variations = [
-                {"name": "Hook-First", "body": body_fallback},
-                {"name": "PAS", "body": body_fallback},
-                {"name": "Proof-First", "body": body_fallback}
-            ]
-        while len(variations) < 3:
-            variations.append(variations[0] if variations else {"name": "Fallback", "body": "Hi {{first_name}}..."})
-        variations = variations[:3]
+        return {"subject": subject, "body": email_body}
 
-        detected_vars = _extract_variables(subjects, variations)
-
-        if is_legacy:
-            return {"subjects": subjects, "body": variations[0]["body"]}
-
-        return {"subjects": subjects, "variations": variations, "variables": detected_vars}
-
-    except Exception as e:
+    except json.JSONDecodeError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate email: {str(e)}"
+            detail=f"AI returned invalid JSON: {str(e)}"
         )
-
-
-@router.post("/api/ai/generate-subjects")
-@limiter.limit("20/hour")
-def generate_more_subjects(
-    request: Request,
-    body: AIGenerateSubjectsRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Generate additional subject line options without regenerating email bodies."""
-    if current_user.plan == "trial":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to perform this action.")
-
-    gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    groq_key = os.getenv("GROQ_API_KEY")
-    if not gemini_key and not groq_key:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Neither Gemini nor Groq API keys are configured on the server.")
-
-    count = min(max(body.count or 3, 1), 6)
-    existing_note = ""
-    if body.existing_subjects:
-        existing_note = "\nDo NOT repeat or closely resemble these existing subjects:\n" + "\n".join(f"- {s}" for s in body.existing_subjects)
-
-    offer_line = f"\nOffer / Skills / Product: {body.skills_or_offer}" if body.skills_or_offer else ""
-
-    system_prompt = (
-        "You are a subject line specialist. Output ONLY a valid JSON object with one field: \"subjects\" — an array of subject line strings. "
-        "Rules: each subject must be under 45 characters, no end punctuation. "
-        "Vary hooks across: (1) curiosity — an incomplete or counterintuitive idea, "
-        "(2) specificity — MUST contain {{first_name}} or {{company}}, "
-        "(3) directness — states the exact value plainly. "
-        "BANNED words and phrases: 'Quick question', 'Following up', 'Introduction', 'Just wanted', 'Checking in', "
-        "'Touching base', 'Partnership', 'Collaboration', 'Opportunity', 'Exciting'. "
-        "Raw JSON only, no markdown, no explanation."
-    )
-    user_prompt = (
-        f"Generate {count} fresh, high-converting cold email subject lines for this exact scenario:\n\n"
-        f"Sender Role: {body.role}\n"
-        f"Objective: {body.objective}\n"
-        f"Target Audience: {body.target_audience}\n"
-        f"Tone: {body.tone or 'professional'}{offer_line}{existing_note}\n\n"
-        f"Write subjects that directly reference the offer/skills above — make each one feel specific, not generic."
-    )
-
-    try:
-        content = _call_ai_with_fallback(system_prompt, user_prompt, temperature=0.80, max_tokens=300)
-
-        if content.startswith("```"):
-            lines = content.splitlines()
-            if lines[0].startswith("```"): lines = lines[1:]
-            if lines and lines[-1].startswith("```"): lines = lines[:-1]
-            content = "\n".join(lines).strip()
-
-        parsed = json.loads(content)
-        subjects = parsed.get("subjects") or []
-        if isinstance(subjects, str): subjects = [subjects]
-        subjects = [s for s in subjects if isinstance(s, str) and s.strip()][:count]
-        return {"subjects": subjects}
-
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate subjects: {str(e)}"
+            detail=f"Failed to generate template: {str(e)}"
         )

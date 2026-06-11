@@ -1,9 +1,34 @@
 import { useState, useEffect } from 'react';
 import { api } from '../App';
 
+function getFriendlyErrorMessage(errorMsg) {
+  if (!errorMsg) return 'Unknown delivery issue';
+  const lower = errorMsg.toLowerCase();
+  
+  if (lower.includes('nxdomain') || lower.includes('domain not found') || lower.includes('dns type')) {
+    return "Email domain doesn't exist (spelling error or invalid company website).";
+  }
+  if (lower.includes('user unknown') || lower.includes('550') || lower.includes('551') || lower.includes('no such user') || lower.includes('recipient rejected') || lower.includes('mailbox unavailable')) {
+    return "This email address doesn't exist.";
+  }
+  if (lower.includes('timeout') || lower.includes('connection timed out')) {
+    return "The recipient's mail server didn't respond in time.";
+  }
+  if (lower.includes('connection refused') || lower.includes('connect refused')) {
+    return "The recipient's mail server rejected the connection.";
+  }
+  if (lower.includes('auth') || lower.includes('credential') || lower.includes('login') || lower.includes('rejection')) {
+    return "Sender account authentication failure. Please check your SMTP settings.";
+  }
+  if (lower.includes('spam') || lower.includes('blocked') || lower.includes('blacklisted') || lower.includes('reputation')) {
+    return "Email blocked by recipient server's spam filter.";
+  }
+  return errorMsg; // Fallback to raw error if it doesn't match common patterns
+}
+
 export default function FailedContactsTab({ campaignId, recipients, onRefresh, isEditable, setActiveTab }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const [errorFilter, setErrorFilter] = useState('All Errors');
+  const [errorFilter, setErrorFilter] = useState('All Issues');
   const [message, setMessage] = useState({ text: '', type: '' });
 
   // CSV Upload States
@@ -22,27 +47,30 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
 
   // Error parser
   const getErrorGroup = (errorMsg) => {
-    if (!errorMsg) return 'Unknown Error';
-    const match = errorMsg.match(/^(\d{3})\b/);
-    if (match) return `SMTP ${match[1]}`;
-    if (errorMsg.toLowerCase().includes('timeout')) return 'Timeout';
-    if (errorMsg.toLowerCase().includes('auth') || errorMsg.toLowerCase().includes('credential')) return 'Auth Error';
-    if (errorMsg.toLowerCase().includes('connection') || errorMsg.toLowerCase().includes('connect')) return 'Connection Error';
-    return 'Other';
+    if (!errorMsg) return 'Other Delivery Issues';
+    const lower = errorMsg.toLowerCase();
+    if (lower.includes('nxdomain') || lower.includes('domain not found') || lower.includes('dns type') || lower.includes('user unknown') || lower.includes('550') || lower.includes('551') || lower.includes('no such user') || lower.includes('recipient rejected') || lower.includes('mailbox unavailable')) {
+      return 'Invalid Email Address/Domain';
+    }
+    if (lower.includes('timeout') || lower.includes('connection timed out')) return 'Server Timeouts';
+    if (lower.includes('auth') || lower.includes('credential') || lower.includes('login')) return 'Sender Account Login Issues';
+    if (lower.includes('connection') || lower.includes('connect')) return 'Connection Issues';
+    if (lower.includes('spam') || lower.includes('blocked') || lower.includes('blacklisted') || lower.includes('reputation')) return 'Spam Filter Blocks';
+    return 'Other Delivery Issues';
   };
 
   // Group counts for dropdown list
-  const groupCounts = { 'All Errors': failedContacts.length };
+  const groupCounts = { 'All Issues': failedContacts.length };
   failedContacts.forEach(c => {
     const group = getErrorGroup(c.error_message);
     groupCounts[group] = (groupCounts[group] || 0) + 1;
   });
 
-  const uniqueGroups = Object.keys(groupCounts).filter(g => g !== 'All Errors');
+  const uniqueGroups = Object.keys(groupCounts).filter(g => g !== 'All Issues');
 
   // Filtered contacts based on dropdown selection
   const filteredContacts = failedContacts.filter(c => {
-    if (errorFilter === 'All Errors') return true;
+    if (errorFilter === 'All Issues') return true;
     return getErrorGroup(c.error_message) === errorFilter;
   });
 
@@ -211,7 +239,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
       <div className="error-filter-row">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <label style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
-            Filter by Error:
+            Filter by issue:
           </label>
           <select
             className="error-filter-select"
@@ -221,7 +249,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
               setSelectedIds(new Set()); // Reset selections when filter changes
             }}
           >
-            <option value="All Errors">All Errors ({groupCounts['All Errors']})</option>
+            <option value="All Issues">All Issues ({groupCounts['All Issues']})</option>
             {uniqueGroups.map(g => (
               <option key={g} value={g}>{g} ({groupCounts[g]})</option>
             ))}
@@ -241,7 +269,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            Download Failed CSV
+            Download Failures List
           </button>
         </div>
       </div>
@@ -292,8 +320,8 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                 />
               </th>
               <th>Recipient</th>
-              <th>Error Message</th>
-              <th>Sent At</th>
+              <th>Reason for Failure</th>
+              <th>Attempted At</th>
               {isEditable && <th style={{ width: '60px', textAlign: 'center' }}>Action</th>}
             </tr>
           </thead>
@@ -316,7 +344,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                 </td>
                 <td style={{ fontWeight: 600 }}>{r.email}</td>
                 <td style={{ color: 'var(--error)', fontSize: '0.82rem', fontWeight: 500 }}>
-                  {r.error_message || '—'}
+                  {getFriendlyErrorMessage(r.error_message)}
                 </td>
                 <td style={{ color: 'var(--muted-foreground)', fontSize: '0.82rem' }}>
                   {r.sent_at ? new Date(r.sent_at).toLocaleString() : '—'}
@@ -398,10 +426,10 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
       {isEditable && (
         <div style={{ padding: '24px', borderTop: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}>
           <h3 className="section-title" style={{ marginBottom: '12px', fontSize: '1rem' }}>
-            Re-upload Corrected CSV
+            Upload Fixed Contacts Spreadsheet
           </h3>
           <p style={{ fontSize: '0.82rem', color: 'var(--muted-foreground)', marginBottom: '16px' }}>
-            Fix any failed contacts in your spreadsheet and upload it here. Make sure the headers match your original import.
+            Fix any email address spelling or formatting errors in your spreadsheet, then upload it here to retry sending.
           </p>
           <form onSubmit={handleUploadCorrectedCsv} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div
@@ -435,15 +463,15 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                 </div>
               ) : (
                 <div>
-                  <div style={{ fontWeight: 700, color: 'var(--foreground)', fontSize: '0.9rem' }}>Drag & drop your corrected CSV here</div>
-                  <div style={{ color: 'var(--muted-foreground)', fontSize: '0.78rem', marginTop: '2px' }}>or click to browse from device</div>
+                  <div style={{ fontWeight: 700, color: 'var(--foreground)', fontSize: '0.9rem' }}>Drag & drop your corrected spreadsheet here (.csv)</div>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '0.78rem', marginTop: '2px' }}>or click to browse</div>
                 </div>
               )}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
               <div>
-                <label className="form-label" style={{ marginBottom: '4px', display: 'block' }}>Import Mode</label>
+                <label className="form-label" style={{ marginBottom: '4px', display: 'block' }}>How to import</label>
                 <div className="radio-group" style={{ display: 'flex', gap: '20px', margin: '8px 0' }}>
                   <label className="radio-option" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
                     <input
@@ -455,7 +483,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                       disabled={submittingCsv}
                       style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }}
                     />
-                    Append (keeps existing log, adds corrected ones)
+                    Add to my current contacts (keeps existing log, adds newly uploaded ones)
                   </label>
                   <label className="radio-option" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>
                     <input
@@ -467,10 +495,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                       disabled={submittingCsv}
                       style={{ accentColor: 'var(--accent-primary)', width: '16px', height: '16px' }}
                     />
-                    Replace list
-                    <span style={{ fontSize: '0.74rem', color: '#F59E0B', fontWeight: 500, marginLeft: '6px' }}>
-                      — This will replace your existing contacts
-                    </span>
+                    Start fresh (removes current contacts)
                   </label>
                 </div>
               </div>
@@ -481,7 +506,7 @@ export default function FailedContactsTab({ campaignId, recipients, onRefresh, i
                 disabled={submittingCsv || !csvFile}
                 style={{ alignSelf: 'flex-end', height: '40px' }}
               >
-                {submittingCsv ? 'Importing...' : 'Upload Corrected CSV'}
+                {submittingCsv ? 'Importing...' : 'Upload Fixed Spreadsheet'}
               </button>
             </div>
           </form>
